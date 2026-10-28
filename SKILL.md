@@ -17,6 +17,15 @@ const board = new Board();
 board.addShape({ id: "a", type: "rect", x: 0, y: 0, text: "Start" }, bot);
 ```
 
+Draw a flowchart from text, then read the board:
+
+```js
+import { drawFlow, readBoard } from "agentic-canvas";
+
+drawFlow(board, "A[Start] -> B{Ok?}: go\nB -> C: yes", bot);
+readBoard(board);
+```
+
 ## Rules
 
 - Name the actor on every write.
