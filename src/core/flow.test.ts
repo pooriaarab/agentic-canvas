@@ -19,6 +19,10 @@
 // 12. An id clash, a parse error, or the element cap leaves the board untouched.
 // 13. Every drawn element carries the actor. Connectors bind to the node ids.
 // 14. A second flow lands below the first. A prefix keeps ids apart.
+// 16. Two agents draw at the same time on two docs: nothing is overwritten and
+//     every edge binds the nodes of its own flow. Same text twice never clashes.
+// 17. A node named like a connector id is refused with a clear message.
+// 18. Node ids such as __proto__ and constructor parse, lay out, draw, and read.
 // Reading
 // 15. An empty board, the node and edge split, machine-made flags, no mutation.
 import { describe, expect, test } from "vitest";
@@ -172,7 +176,7 @@ describe("drawing", () => {
     const board = new Board(new Y.Doc(), { maxElements: 4 });
     board.addShape({ id: "S", type: "rect", x: 0, y: 0 }, human);
     const before = bytes(board);
-    expect(code(() => drawFlow(board, src, agent))).toBe("DUPLICATE_ID");
+    expect(code(() => drawFlow(board, src, agent, { idPrefix: "" }))).toBe("DUPLICATE_ID");
     expect(code(() => drawFlow(board, "A => B", agent))).toBe("INVALID");
     expect(code(() => drawFlow(board, "A -> B\nB -> C", agent))).toBe("LIMIT");
     expect(code(() => drawFlow(board, "A -> B", agent, { idPrefix: "bad id" }))).toBe("INVALID");
@@ -180,7 +184,7 @@ describe("drawing", () => {
   });
   test("marks every element with the actor and binds connectors to node ids", () => {
     const board = new Board();
-    const result = drawFlow(board, src, agent);
+    const result = drawFlow(board, src, agent, { idPrefix: "" });
     expect(result.nodes).toEqual(["S", "D", "E"]);
     const all = board.list();
     expect(all).toHaveLength(5);
@@ -191,7 +195,7 @@ describe("drawing", () => {
   });
   test("places a second flow below the first and keeps ids apart with a prefix", () => {
     const board = new Board();
-    drawFlow(board, "A -> B", agent);
+    drawFlow(board, "A -> B", agent, { idPrefix: "" });
     drawFlow(board, "A -> B", agent, { idPrefix: "two-" });
     const shapes = board.list().flatMap((e) => (e.type === "connector" || e.type === "group" ? [] : [e]));
     expect(shapes).toHaveLength(4);
@@ -200,6 +204,72 @@ describe("drawing", () => {
     const first = board.get("A") as { y: number; h: number };
     expect((board.get("two-A") as { y: number }).y).toBeGreaterThan(first.y + first.h);
   });
+});
+
+describe("drawing at the same time", () => {
+  const shapesOf = (b: Board) => b.list().flatMap((e) => (e.type === "connector" || e.type === "group" ? [] : [e]));
+  const edgesOf = (b: Board) => b.list().flatMap((e) => (e.type === "connector" ? [e] : []));
+  const merge = (a: Board, b: Board) => {
+    const ua = a.encode();
+    const ub = b.encode();
+    Y.applyUpdate(a.doc, ub);
+    Y.applyUpdate(b.doc, ua);
+  };
+  test("two agents drawing A -> B and A -> C keep both flows whole", () => {
+    const base = new Board();
+    const left = Board.decode(base.encode());
+    const right = Board.decode(base.encode());
+    const one = drawFlow(left, "A -> B", agent);
+    const two = drawFlow(right, "A -> C", { kind: "agent", id: "a2" });
+    merge(left, right);
+    expect(left.list()).toEqual(right.list());
+    expect(shapesOf(left)).toHaveLength(4);
+    expect(edgesOf(left)).toHaveLength(2);
+    expect(new Set([...one.nodes, ...one.edges, ...two.nodes, ...two.edges]).size).toBe(6);
+    const texts = (ids: string[]) => ids.map((i) => (left.get(i) as { text: string }).text);
+    expect(texts(one.nodes)).toEqual(["A", "B"]);
+    expect(texts(two.nodes)).toEqual(["A", "C"]);
+    expect(left.get(one.edges[0])).toMatchObject({ from: { id: one.nodes[0] }, to: { id: one.nodes[1] } });
+    expect(left.get(two.edges[0])).toMatchObject({ from: { id: two.nodes[0] }, to: { id: two.nodes[1] } });
+    expect(left.get(two.nodes[0])!.author.id).toBe("a2");
+  });
+  test("the same text twice on one board does not clash", () => {
+    const board = new Board();
+    drawFlow(board, "A -> B", agent);
+    drawFlow(board, "A -> B", agent);
+    expect(shapesOf(board)).toHaveLength(4);
+    expect(edgesOf(board)).toHaveLength(2);
+  });
+  test("a prefix chosen by the caller is used as given", () => {
+    expect(drawFlow(new Board(), "A -> B", agent, { idPrefix: "mine-" }).nodes).toEqual(["mine-A", "mine-B"]);
+  });
+  test("a node named like a connector id is refused with a clear message", () => {
+    const err = (() => {
+      try {
+        parseFlow("edge_1 -> B");
+      } catch (e) {
+        return e as CanvasError;
+      }
+    })();
+    expect(err?.code).toBe("INVALID");
+    expect(err?.message).toContain("edge_");
+  });
+  test.each(["__proto__", "constructor", "hasOwnProperty", "toString", "valueOf", "prototype"])(
+    "node id %s survives parse, layout, draw, and read",
+    (name) => {
+      const src = `${name}[Hello] -> B: go\nB -> ${name}`;
+      const graph = parseFlow(src);
+      expect(graph.nodes.map((n) => n.id)).toEqual([name, "B"]);
+      expect(layoutFlow(graph).map((p) => p.id)).toEqual([name, "B"]);
+      const board = new Board();
+      const result = drawFlow(board, src, agent, { idPrefix: "" });
+      expect(result.nodes).toEqual([name, "B"]);
+      expect(readBoard(board).nodes.map((n) => n.id).sort()).toEqual([name, "B"].sort());
+      expect(board.get(name)).toMatchObject({ text: "Hello" });
+      expect(({} as Record<string, unknown>).text).toBeUndefined();
+      expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    },
+  );
 });
 
 describe("reading", () => {

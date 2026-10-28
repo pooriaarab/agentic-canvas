@@ -9,6 +9,7 @@ import type { Principal } from "./principal.js";
 //   C(Rounded)                (a node alone)
 // [text] is a box, (text) an ellipse, {text} a diamond. A bare id is a box with
 // the id as its text. Lines that start with # or // are comments.
+// A node id may not look like edge_1: connector ids use that form.
 
 export const MAX_FLOW_NODES = 500;
 export const MAX_FLOW_EDGES = 2000;
@@ -44,6 +45,7 @@ export function parseFlow(source: string): FlowGraph {
   };
   const node = (line: number, m: RegExpMatchArray, at: number): string => {
     const id = m[at];
+    if (/^edge_\d+$/.test(id)) fail(line, `"${id}" is reserved for connectors. Pick another node id.`);
     const brackets = m.slice(at + 1, at + 4);
     const open = brackets.findIndex((b) => b !== undefined);
     const shape = SHAPES[Math.max(open, 0)];
@@ -108,13 +110,15 @@ export function layoutFlow(graph: FlowGraph): Placement[] {
   const g = new dagre.graphlib.Graph({ multigraph: true });
   g.setGraph({ rankdir: graph.direction, nodesep: 40, ranksep: 70, marginx: 0, marginy: 0 });
   g.setDefaultEdgeLabel(() => ({}));
-  const sizes = new Map(graph.nodes.map((n) => [n.id, sizeOf(n)]));
-  for (const [id, { w, h }] of sizes) g.setNode(id, { width: w, height: h });
-  graph.edges.forEach((e, i) => g.setEdge(e.from, e.to, {}, String(i)));
+  // graphlib keeps names as object keys. Give it indexes, so "__proto__" is only ever data here.
+  const index = new Map(graph.nodes.map((n, i) => [n.id, `n${i}`]));
+  const sizes = graph.nodes.map(sizeOf);
+  sizes.forEach(({ w, h }, i) => g.setNode(`n${i}`, { width: w, height: h }));
+  graph.edges.forEach((e, i) => g.setEdge(index.get(e.from)!, index.get(e.to)!, {}, String(i)));
   dagre.layout(g);
-  const boxes = graph.nodes.map((n) => {
-    const { w, h } = sizes.get(n.id)!;
-    const c = g.node(n.id);
+  const boxes = graph.nodes.map((n, i) => {
+    const { w, h } = sizes[i];
+    const c = g.node(`n${i}`);
     return { id: n.id, x: Math.round(c.x - w / 2), y: Math.round(c.y - h / 2), w, h };
   });
   const minX = Math.min(...boxes.map((b) => b.x));
@@ -123,7 +127,11 @@ export function layoutFlow(graph: FlowGraph): Placement[] {
 }
 
 export interface DrawOptions {
-  /** Put in front of every id, so two flows can share a board. Up to 16 of A-Z, a-z, 0-9, _ and -. */
+  /**
+   * Put in front of every id. Default: a new random prefix for each call, so two agents that draw at
+   * the same time never write the same id. A prefix you pass is used as given, and it makes ids
+   * repeatable. Up to 16 of A-Z, a-z, 0-9, _ and -.
+   */
   idPrefix?: string;
   /** Top-left of the drawing. Default: below the shapes already on the board. */
   origin?: { x: number; y: number };
@@ -136,7 +144,7 @@ export function drawFlow(
   actor: Principal,
   options: DrawOptions = {},
 ): { nodes: string[]; edges: string[] } {
-  const prefix = options.idPrefix ?? "";
+  const prefix = options.idPrefix ?? `${crypto.randomUUID().slice(0, 8)}-`;
   if (!/^[A-Za-z0-9_-]{0,16}$/.test(prefix)) throw new CanvasError("INVALID", "idPrefix must be up to 16 of A-Z, a-z, 0-9, _ and -");
   const graph = parseFlow(source);
   const placed = layoutFlow(graph);
