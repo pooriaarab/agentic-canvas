@@ -3,8 +3,9 @@
 //
 // Failure-mode list. These were written before the CLI and the store.
 //  1. No command, an unknown command, an unknown flag, wrong argument count: exit 2.
-//  2. A write with no actor, a bad actor, or an --actor that differs from
-//     CANVAS_ACTOR: exit 2.
+//  2. A write with CANVAS_ACTOR unset, empty, blank, or not <kind>:<id> with a
+//     valid kind: exit 2, and nothing is written. There is no --actor flag, so
+//     a caller cannot pick its own kind (human included).
 //  3. Unknown board: exit 1. A board id that climbs out of the folder: exit 1,
 //     and no file lands outside it.
 //  4. A blank or non-numeric number: exit 1 with a clear message.
@@ -47,8 +48,9 @@ function cli(dir: string, args: string[], env: Record<string, string> = {}): Pro
   });
 }
 
-const agent = ["--actor", "agent_of_human:helper"];
-const human = ["--actor", "human:ada"];
+// The actor comes from CANVAS_ACTOR only. These are the operator environments.
+const agent = { CANVAS_ACTOR: "agent_of_human:helper" };
+const human = { CANVAS_ACTOR: "human:ada" };
 const json = (r: Result) => JSON.parse(r.out);
 
 beforeAll(() => {
@@ -62,12 +64,9 @@ describe("usage errors", () => {
     ["unknown flag", ["read", "b", "--nope"]],
     ["too few arguments", ["connect", "b", "a"]],
     ["too many arguments", ["read", "a", "b"]],
-    ["write without actor", ["new"]],
-    ["bad actor kind", ["new", "--actor", "robot:x"]],
-    ["actor without colon", ["new", "--actor", "human"]],
-    ["flow with both text and file", ["flow", "b", "--text", "A -> B", "--file", "x", ...agent]],
+    ["flow with both text and file", ["flow", "b", "--text", "A -> B", "--file", "x"]],
   ])("%s exits 2 with nothing on stdout", async (_name, args) => {
-    const r = await cli(fresh(), args);
+    const r = await cli(fresh(), args, agent);
     expect(r.code).toBe(2);
     expect(r.out).toBe("");
     expect(r.err).not.toMatch(/\n\s+at /);
@@ -83,10 +82,10 @@ describe("failures exit 1", () => {
   test("unknown board, duplicate board, bad number", async () => {
     const dir = fresh();
     expect((await cli(dir, ["read", "nope"])).err).toContain("NOT_FOUND");
-    await cli(dir, ["new", "--id", "b", ...human]);
-    expect((await cli(dir, ["new", "--id", "b", ...human])).err).toContain("DUPLICATE_ID");
+    await cli(dir, ["new", "--id", "b"], human);
+    expect((await cli(dir, ["new", "--id", "b"], human)).err).toContain("DUPLICATE_ID");
     for (const x of ["abc", ""]) {
-      const r = await cli(dir, ["add", "b", "--type", "rect", "--x", x, "--y", "0", ...agent]);
+      const r = await cli(dir, ["add", "b", "--type", "rect", "--x", x, "--y", "0"], agent);
       expect([r.code, r.out]).toEqual([1, ""]);
       expect(r.err).toContain("INVALID");
     }
@@ -94,25 +93,25 @@ describe("failures exit 1", () => {
   test("a board id cannot climb out of the folder", async () => {
     const dir = fresh();
     for (const id of ["../escape", "a/b", "..", "x".repeat(65)]) {
-      const r = await cli(dir, ["new", "--id", id, ...human]);
+      const r = await cli(dir, ["new", "--id", id], human);
       expect(r.code).toBe(1);
     }
-    await cli(dir, ["new", "--id", "ok", ...human]);
+    await cli(dir, ["new", "--id", "ok"], human);
     copyFileSync(join(dir, "boards", "ok.json"), join(dir, "escape.json"));
     expect(await cli(dir, ["read", "../escape"])).toMatchObject({ code: 1, out: "" });
   });
   test("bad flow text leaves the board unchanged", async () => {
     const dir = fresh();
-    await cli(dir, ["new", "--id", "b", ...human]);
-    await cli(dir, ["flow", "b", "--text", "A -> B", ...agent]);
+    await cli(dir, ["new", "--id", "b"], human);
+    await cli(dir, ["flow", "b", "--text", "A -> B"], agent);
     const before = (await cli(dir, ["read", "b"])).out;
-    const r = await cli(dir, ["flow", "b", "--text", "C -> D\nE => F", "--prefix", "x-", ...agent]);
+    const r = await cli(dir, ["flow", "b", "--text", "C -> D\nE => F", "--prefix", "x-"], agent);
     expect([r.code, r.err]).toEqual([1, expect.stringContaining("line 2")]);
     expect((await cli(dir, ["read", "b"])).out).toBe(before);
   });
   test("a damaged stored file is a clean error", async () => {
     const dir = fresh();
-    await cli(dir, ["new", "--id", "b", ...human]);
+    await cli(dir, ["new", "--id", "b"], human);
     writeFileSync(join(dir, "boards", "b.json"), "{not json");
     const r = await cli(dir, ["read", "b"]);
     expect(r.code).toBe(1);
@@ -122,25 +121,59 @@ describe("failures exit 1", () => {
 });
 
 describe("actor", () => {
-  test("CANVAS_ACTOR fixes the actor, and a different --actor cannot override it", async () => {
+  const add = ["add", "b", "--type", "rect", "--x", "0", "--y", "0"];
+  const nodeCount = async (dir: string) => json(await cli(dir, ["read", "b"])).nodes.length;
+  test.each([
+    ["unset", {}],
+    ["empty", { CANVAS_ACTOR: "" }],
+    ["blank", { CANVAS_ACTOR: "   " }],
+    ["no colon", { CANVAS_ACTOR: "human" }],
+    ["unknown kind", { CANVAS_ACTOR: "robot:x" }],
+    ["empty id", { CANVAS_ACTOR: "agent:" }],
+    ["empty kind", { CANVAS_ACTOR: ":x" }],
+  ])("a write with CANVAS_ACTOR %s exits 2 and writes nothing", async (_name, env) => {
     const dir = fresh();
-    await cli(dir, ["new", "--id", "b", ...human]);
-    const env = { CANVAS_ACTOR: "agent:bot" };
-    const clash = await cli(dir, ["add", "b", "--type", "rect", "--x", "0", "--y", "0", ...human], env);
-    expect([clash.code, clash.out]).toEqual([2, ""]);
-    await cli(dir, ["add", "b", "--type", "rect", "--x", "0", "--y", "0", "--actor", "agent:bot"], env);
-    await cli(dir, ["add", "b", "--type", "rect", "--x", "9", "--y", "0"], env);
+    await cli(dir, ["new", "--id", "b"], human);
+    const r = await cli(dir, add, env);
+    expect([r.code, r.out]).toEqual([2, ""]);
+    expect(r.err).toContain("CANVAS_ACTOR");
+    expect(await nodeCount(dir)).toBe(0);
+    const made = await cli(dir, ["new", "--id", "c"], env);
+    expect(made.code).toBe(2);
+    expect(existsSync(join(dir, "boards", "c.json"))).toBe(false);
+  });
+  test("--actor does not exist: it cannot set a kind, human or other", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b"], human);
+    for (const env of [{}, { CANVAS_ACTOR: "" }, agent]) {
+      for (const flag of ["human:mallory", "agent:bot"]) {
+        const r = await cli(dir, [...add, "--actor", flag], env);
+        expect([r.code, r.out]).toEqual([2, ""]);
+      }
+    }
+    expect(await nodeCount(dir)).toBe(0);
+  });
+  test("the kind comes from CANVAS_ACTOR and labels the work", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b"], human);
+    await cli(dir, add, { CANVAS_ACTOR: "agent:bot" });
+    await cli(dir, add, human);
     const nodes = json(await cli(dir, ["read", "b"])).nodes;
-    expect(nodes.map((n: { author: { kind: string } }) => n.author.kind)).toEqual(["agent", "agent"]);
+    expect(nodes.map((n: { author: { kind: string }; machineMade: boolean }) => [n.author.kind, n.machineMade])).toEqual([["agent", true], ["human", false]]);
+  });
+  test("a read needs no actor", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b"], human);
+    expect((await cli(dir, ["read", "b"], {})).code).toBe(0);
   });
 });
 
 describe("concurrency", () => {
   test("eight processes adding at once lose nothing", async () => {
     const dir = fresh();
-    await cli(dir, ["new", "--id", "b", ...human]);
+    await cli(dir, ["new", "--id", "b"], human);
     const results = await Promise.all(
-      Array.from({ length: 8 }, (_, i) => cli(dir, ["add", "b", "--type", "rect", "--x", String(i * 10), "--y", "0", "--id", `s${i}`, ...agent])),
+      Array.from({ length: 8 }, (_, i) => cli(dir, ["add", "b", "--type", "rect", "--x", String(i * 10), "--y", "0", "--id", `s${i}`], agent)),
     );
     expect(results.map((r) => r.code)).toEqual(Array(8).fill(0));
     const ids = json(await cli(dir, ["read", "b"])).nodes.map((s: { id: string }) => s.id).sort();
@@ -151,14 +184,14 @@ describe("concurrency", () => {
 describe("round trip", () => {
   test("new, add, connect, flow, move, rm, read", async () => {
     const dir = fresh();
-    expect(json(await cli(dir, ["new", "--id", "b", "--title", "Plan", ...human]))).toEqual({ id: "b", title: "Plan" });
-    await cli(dir, ["add", "b", "--type", "sticky", "--x", "0", "--y", "0", "--text", "Idea", "--id", "idea", ...human]);
-    await cli(dir, ["add", "b", "--type", "ellipse", "--x", "300", "--y", "0", "--text", "Plan", "--id", "plan", ...agent]);
-    const link = json(await cli(dir, ["connect", "b", "idea", "plan", "--text", "leads to", ...agent]));
+    expect(json(await cli(dir, ["new", "--id", "b", "--title", "Plan"], human))).toEqual({ id: "b", title: "Plan" });
+    await cli(dir, ["add", "b", "--type", "sticky", "--x", "0", "--y", "0", "--text", "Idea", "--id", "idea"], human);
+    await cli(dir, ["add", "b", "--type", "ellipse", "--x", "300", "--y", "0", "--text", "Plan", "--id", "plan"], agent);
+    const link = json(await cli(dir, ["connect", "b", "idea", "plan", "--text", "leads to"], agent));
     expect(link).toMatchObject({ type: "connector", from: { id: "idea" }, to: { id: "plan" } });
-    const flow = json(await cli(dir, ["flow", "b", "--text", "S(Start) -> D{Ok?}: go\nD -> E[Done]: yes", "--prefix", "f-", ...agent]));
+    const flow = json(await cli(dir, ["flow", "b", "--text", "S(Start) -> D{Ok?}: go\nD -> E[Done]: yes", "--prefix", "f-"], agent));
     expect(flow.nodes).toEqual(["f-S", "f-D", "f-E"]);
-    expect(json(await cli(dir, ["move", "b", "idea", "--dx", "-5", "--dy", "6", ...human]))).toEqual({ moved: ["idea"] });
+    expect(json(await cli(dir, ["move", "b", "idea", "--dx", "-5", "--dy", "6"], human))).toEqual({ moved: ["idea"] });
     expect(json(await cli(dir, ["rm", "b", "f-E"])).removed).toEqual(["f-E", "f-edge_2"]);
     const read = json(await cli(dir, ["read", "b"]));
     expect(read.title).toBe("Plan");

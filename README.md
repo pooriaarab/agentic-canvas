@@ -31,8 +31,9 @@ npx agentic-canvas read demo              # nodes, edges, text as JSON
 
 Other commands: `add`, `connect`, `move`, `rm`. Run `npx agentic-canvas --help`.
 Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
-needs an actor: `CANVAS_ACTOR`, or `--actor`. When `CANVAS_ACTOR` is set it fixes the
-actor, and `--actor` cannot differ. The CLI has no default actor.
+needs an actor in `CANVAS_ACTOR`, as `<kind>:<id>`. The operator sets it. A write
+fails when it is unset, empty, or has a bad kind. The CLI has no `--actor` flag and no
+default actor, so a caller cannot pick its own kind. Only the operator can set `human`.
 
 ## SDK
 
@@ -95,6 +96,8 @@ the direction. Lines that start with `#` or `//` are comments.
 - `move` writes absolute positions. Two peers that move one shape at the same time do not add up:
   the last writer wins.
 - Frames are plain shapes. They do not own the shapes inside them yet.
+- A crash can leave `.lock` in the store folder. Every call then waits 10 seconds and fails
+  with `UNAVAILABLE`. Remove the folder by hand. There is no stale-lock check yet.
 - Delete leaves no audit record yet. The caller logs it.
 
 ## License

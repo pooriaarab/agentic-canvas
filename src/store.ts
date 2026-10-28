@@ -14,7 +14,7 @@ export interface StoreOps {
   put(collection: string, id: string, doc: Doc): Promise<void>;
   delete(collection: string, id: string): Promise<void>;
 }
-export interface BoardStore extends StoreOps {
+export interface BoardStore {
   /** Run `fn` alone: no other transaction on this store runs at the same time. */
   transaction<R>(fn: (tx: StoreOps) => Promise<R>): Promise<R>;
 }
@@ -90,5 +90,5 @@ export function fileStore(dir: string): BoardStore {
       await rm(lock, { recursive: true, force: true });
     }
   }
-  return { ...ops, transaction: (fn) => queue.run(() => locked(() => fn(ops))) };
+  return { transaction: (fn) => queue.run(() => locked(() => fn(ops))) };
 }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { BRAND } from "./brand.js";
 import { CanvasError } from "./core/board.js";
-import { principalSchema, type Principal } from "./core/principal.js";
+import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/principal.js";
 import { CanvasService } from "./service.js";
 import { fileStore } from "./store.js";
 
@@ -12,7 +12,7 @@ class UsageError extends Error {}
 const HELP = `${BRAND.command} ${BRAND.version}
 ${BRAND.description}
 
-Usage: ${BRAND.command} [--dir <path>] [--actor <kind>:<id>] <command> [flags]
+Usage: ${BRAND.command} [--dir <path>] <command> [flags]
 
 Commands:
   new [--id <id>] [--title <t>]            Make a board.
@@ -23,13 +23,13 @@ Commands:
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
 
-Write commands need an actor, such as "agent:helper": set CANVAS_ACTOR, or pass --actor.
-When CANVAS_ACTOR is set, it fixes the actor and --actor cannot differ.
+Write commands need an actor in CANVAS_ACTOR as <kind>:<id>, such as "agent:helper".
+The operator sets it. A caller cannot pick its own kind: there is no --actor flag.
 Kinds: human, agent_of_human, agent_of_agent, agent, user_token.
 The store folder is --dir, or CANVAS_DIR, or ./.agentic-canvas.`;
 
 const flags = {
-  dir: { type: "string" }, actor: { type: "string" }, id: { type: "string" }, title: { type: "string" },
+  dir: { type: "string" }, id: { type: "string" }, title: { type: "string" },
   type: { type: "string" }, x: { type: "string" }, y: { type: "string" }, w: { type: "string" }, h: { type: "string" },
   text: { type: "string" }, fill: { type: "string" }, stroke: { type: "string" }, src: { type: "string" },
   dx: { type: "string" }, dy: { type: "string" }, file: { type: "string" }, prefix: { type: "string" },
@@ -59,13 +59,11 @@ async function run(argv: string[]): Promise<void> {
     if (positionals.length !== count + 1) throw new UsageError(`usage: ${BRAND.command} ${command} ${shape}`);
   };
   const actor = (): Principal => {
-    const fixed = process.env.CANVAS_ACTOR;
-    if (fixed && v.actor && v.actor !== fixed) throw new UsageError("CANVAS_ACTOR fixes the actor: drop --actor, or make it match");
-    const raw = fixed || v.actor;
-    if (!raw) throw new UsageError(`"${command}" writes to a board: pass --actor <kind>:<id> or set CANVAS_ACTOR`);
+    const raw = process.env.CANVAS_ACTOR;
+    if (!raw) throw new UsageError(`"${command}" writes to a board: the operator must set CANVAS_ACTOR=<kind>:<id>`);
     const at = raw.indexOf(":");
     const parsed = principalSchema.safeParse({ kind: raw.slice(0, at), id: raw.slice(at + 1) });
-    if (at < 0 || !parsed.success) throw new UsageError(`bad actor "${raw}": use <kind>:<id>, kind is one of human, agent_of_human, agent_of_agent, agent, user_token`);
+    if (at < 0 || !parsed.success) throw new UsageError(`bad CANVAS_ACTOR "${raw}": use <kind>:<id>, kind is one of ${PRINCIPAL_KINDS.join(", ")}`);
     return parsed.data;
   };
   const service = new CanvasService(fileStore(v.dir ?? process.env.CANVAS_DIR ?? ".agentic-canvas"));
