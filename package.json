@@ -38,10 +38,6 @@
       "import": "./dist/index.js"
     }
   },
-  "bin": {
-    "agentic-canvas": "./dist/cli.js",
-    "agentic-canvas-mcp": "./dist/mcp-bin.js"
-  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -51,6 +47,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "yjs": "^13.6.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
