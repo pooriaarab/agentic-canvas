@@ -22,6 +22,8 @@ npm run build
 
 PNG export is optional. It needs the `playwright-core` package (Apache-2.0) and a
 Chromium: `npm i playwright-core && npx playwright-core install chromium`.
+The Chromium download is a one-time call to the Playwright CDN at install time. PNG export
+itself makes no network call.
 
 ## Quick start
 
@@ -81,7 +83,8 @@ the direction. Lines that start with `#` or `//` are comments.
   anything fails.
 - `toSvg`: a deterministic SVG. It fetches nothing and marks machine-made work
   with `data-machine-made`.
-- `svgToPng`: PNG through a headless Chromium, with every network request blocked.
+- `svgToPng`: PNG through a headless Chromium with JavaScript off, service workers blocked,
+  and every network request blocked. A board over 16 million pixels exports as SVG only.
 - A CLI over a local file store. Several processes can write at once.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model runs in Node and in a Worker.

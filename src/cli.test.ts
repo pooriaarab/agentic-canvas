@@ -279,3 +279,32 @@ describe("png network", () => {
     expect(hits).toBe(0);
   }, 60_000);
 });
+
+describe("png limits", () => {
+  test("refuses a board past the pixel cap before it starts a browser", async () => {
+    const { svgToPng } = await import("./png.js");
+    const big = '<svg xmlns="http://www.w3.org/2000/svg" width="4001" height="4001"></svg>';
+    await expect(svgToPng(big)).rejects.toMatchObject({ code: "LIMIT" });
+  });
+  test("a script in the SVG does not run", async () => {
+    let hits = 0;
+    const server = createServer((_req, res) => {
+      hits++;
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/x`;
+    const frame = (script: string) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect id="r" width="60" height="60" fill="#00aa00"/>${script}</svg>`;
+    const attack = `<script>document.getElementById("r").setAttribute("fill","#ff0000");fetch("${url}");new WebSocket("ws://127.0.0.1:1/");</script>`;
+    try {
+      const { svgToPng } = await import("./png.js");
+      const clean = await svgToPng(frame(""));
+      const hostile = await svgToPng(frame(attack));
+      expect(Buffer.from(hostile).equals(Buffer.from(clean))).toBe(true);
+    } finally {
+      server.close();
+    }
+    expect(hits).toBe(0);
+  }, 60_000);
+});

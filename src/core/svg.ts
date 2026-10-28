@@ -1,20 +1,33 @@
-import { COLOR_PATTERN, IMAGE_PATTERN, type Board, type Connector, type Endpoint, type Shape } from "./board.js";
-import { isMachineMade } from "./principal.js";
+import { COLOR_PATTERN, IMAGE_PATTERN, MAX_ELEMENTS, CanvasError, SHAPE_TYPES, type Board, type Connector, type Endpoint, type Shape } from "./board.js";
+import { PRINCIPAL_KINDS } from "./principal.js";
 
 // Pure and deterministic: the same board gives the same bytes. Fonts are the
 // system sans-serif, so the output fetches nothing.
+//
+// The doc is shared, so a peer can write any value into any field, past the
+// write API. Nothing read from the doc is trusted: text goes through esc(),
+// the type and the author kind are printed only from a fixed list, and a number
+// that is not finite and in range drops its element.
 
 const LINE = 17;
 const num = (n: number): string => String(Math.round(n * 100) / 100);
-const esc = (s: string): string =>
-  s
+const esc = (value: unknown): string =>
+  (typeof value === "string" ? value : "")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-const paint = (value: string | undefined, fallback: string): string =>
-  value !== undefined && COLOR_PATTERN.test(value) ? value : fallback;
+const paint = (value: unknown, fallback: string): string => (typeof value === "string" && COLOR_PATTERN.test(value) ? value : fallback);
+const str = (value: unknown): string => (typeof value === "string" ? value : "");
+const within = (n: unknown, low: number, high: number): n is number => typeof n === "number" && Number.isFinite(n) && n >= low && n <= high;
+const LIMIT_COORD = 1e7;
+const TYPES: ReadonlySet<unknown> = new Set([...SHAPE_TYPES, "connector", "group"]);
+const kindOf = (author: unknown): string => {
+  const kind = (author as { kind?: unknown } | null)?.kind;
+  return typeof kind === "string" && (PRINCIPAL_KINDS as readonly string[]).includes(kind) ? kind : "unknown";
+};
+const sane = (s: Shape): boolean => within(s.x, -LIMIT_COORD, LIMIT_COORD) && within(s.y, -LIMIT_COORD, LIMIT_COORD) && within(s.w, 1e-6, LIMIT_COORD) && within(s.h, 1e-6, LIMIT_COORD);
 
 type Pt = { x: number; y: number };
 const isShape = (v: Shape | Pt): v is Shape => "w" in v;
@@ -72,7 +85,7 @@ function shapeBody(s: Shape): string {
   const { x, y, w, h } = s;
   const stroke = paint(s.stroke, "#1f2937");
   const look = (fill: string, more = "") => `fill="${paint(s.fill, fill)}" stroke="${stroke}" stroke-width="2"${more}`;
-  const text = label(s.text, x + w / 2, y + h / 2, w);
+  const text = label(str(s.text), x + w / 2, y + h / 2, w);
   switch (s.type) {
     case "ellipse":
       return `<ellipse cx="${num(x + w / 2)}" cy="${num(y + h / 2)}" rx="${num(w / 2)}" ry="${num(h / 2)}" ${look("#ffffff")}/>${text}`;
@@ -83,9 +96,9 @@ function shapeBody(s: Shape): string {
     case "text":
       return text;
     case "frame":
-      return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" ${look("none", ' stroke-dasharray="8 6"')}/>${label(s.text, x + w / 2, y - 12, w)}`;
+      return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" ${look("none", ' stroke-dasharray="8 6"')}/>${label(str(s.text), x + w / 2, y - 12, w)}`;
     case "image":
-      if (s.src !== undefined && s.src.startsWith("data:") && IMAGE_PATTERN.test(s.src)) {
+      if (typeof s.src === "string" && s.src.startsWith("data:") && IMAGE_PATTERN.test(s.src)) {
         return `<image href="${s.src}" x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" preserveAspectRatio="xMidYMid meet"/>`;
       }
       return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" ${look("#f3f4f6", ' stroke-dasharray="4 4"')}/>${label("image", x + w / 2, y + h / 2, w)}`;
@@ -96,6 +109,8 @@ function shapeBody(s: Shape): string {
 
 type Lane = { index: number; count: number };
 const endKey = (e: Endpoint): string => ("id" in e ? e.id : `${e.x},${e.y}`);
+const wellFormed = (e: unknown): e is Endpoint =>
+  typeof e === "object" && e !== null && (typeof (e as { id?: unknown }).id === "string" || (within((e as Pt).x, -LIMIT_COORD, LIMIT_COORD) && within((e as Pt).y, -LIMIT_COORD, LIMIT_COORD)));
 
 function connectorBody(c: Connector, shapes: Map<string, Shape>, lane: Lane): string {
   const resolve = (e: Endpoint): Shape | Pt | undefined => ("id" in e ? shapes.get(e.id) : e);
@@ -128,27 +143,41 @@ function connectorBody(c: Connector, shapes: Map<string, Shape>, lane: Lane): st
   }
   const marks = `${c.startArrow ? ' marker-start="url(#arrow)"' : ""}${c.endArrow ? ' marker-end="url(#arrow)"' : ""}`;
   const halo = ' stroke="#ffffff" stroke-width="4" paint-order="stroke"';
-  return `<path d="${d}" fill="none" stroke="${paint(c.stroke, "#1f2937")}" stroke-width="2"${marks}/>${label(c.text, at.x, at.y, 160, halo)}`;
+  return `<path d="${d}" fill="none" stroke="${paint(c.stroke, "#1f2937")}" stroke-width="2"${marks}/>${label(str(c.text), at.x, at.y, 160, halo)}`;
 }
+
+const drawable = (el: { type: unknown } & Record<string, unknown>): boolean =>
+  TYPES.has(el.type) &&
+  (el.type === "connector" ? wellFormed(el.from) && wellFormed(el.to) : el.type === "group" || sane(el as unknown as Shape));
 
 /** Draw the board, back to front, on a white background. */
 export function toSvg(board: Board): string {
-  const all = board.list();
+  const listed = board.list();
+  if (listed.length > MAX_ELEMENTS) throw new CanvasError("LIMIT", `a board holds at most ${MAX_ELEMENTS} elements`);
+  const all = listed.filter((el) => drawable(el as never));
   const shapes = new Map<string, Shape>();
-  const points: Pt[] = [];
+  const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const grow = (x: number, y: number): void => {
+    box.minX = Math.min(box.minX, x);
+    box.minY = Math.min(box.minY, y);
+    box.maxX = Math.max(box.maxX, x);
+    box.maxY = Math.max(box.maxY, y);
+  };
   for (const el of all) {
     if (el.type === "connector") {
-      for (const e of [el.from, el.to]) if (!("id" in e)) points.push(e);
+      for (const e of [el.from, el.to]) if (!("id" in e)) grow(e.x, e.y);
     } else if (el.type !== "group") {
       shapes.set(el.id, el);
-      points.push({ x: el.x, y: el.y }, { x: el.x + el.w, y: el.y + el.h });
+      grow(el.x, el.y);
+      grow(el.x + el.w, el.y + el.h);
     }
   }
   const pad = 80;
-  const minX = points.length ? Math.min(...points.map((p) => p.x)) - pad : 0;
-  const minY = points.length ? Math.min(...points.map((p) => p.y)) - pad : 0;
-  const width = points.length ? Math.ceil(Math.max(...points.map((p) => p.x)) + pad - minX) : 240;
-  const height = points.length ? Math.ceil(Math.max(...points.map((p) => p.y)) + pad - minY) : 120;
+  const any = box.minX !== Infinity;
+  const minX = any ? box.minX - pad : 0;
+  const minY = any ? box.minY - pad : 0;
+  const width = any ? Math.ceil(box.maxX + pad - minX) : 240;
+  const height = any ? Math.ceil(box.maxY + pad - minY) : 120;
   const lanes = new Map<string, Lane>();
   const groups = new Map<string, string[]>();
   for (const el of all) {
@@ -161,12 +190,14 @@ export function toSvg(board: Board): string {
     if (el.type === "group") return "";
     const inner = el.type === "connector" ? connectorBody(el, shapes, lanes.get(el.id)!) : shapeBody(el);
     if (inner === "") return "";
-    const mark = `data-id="${esc(el.id)}" data-type="${el.type}" data-author-kind="${el.author.kind}" data-machine-made="${isMachineMade(el.author.kind)}"`;
+    const kind = kindOf(el.author);
+    const mark = `data-id="${esc(el.id)}" data-type="${el.type}" data-author-kind="${kind}" data-machine-made="${kind !== "human"}"`;
     return `<g ${mark}>${inner}</g>`;
   });
+  const title = esc(board.title) || "Whiteboard";
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${num(minX)} ${num(minY)} ${width} ${height}" font-family="sans-serif" font-size="14" fill="#111827" role="img" aria-label="${esc(board.title || "Whiteboard")}">`,
-    `<title>${esc(board.title || "Whiteboard")}</title>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${num(minX)} ${num(minY)} ${width} ${height}" font-family="sans-serif" font-size="14" fill="#111827" role="img" aria-label="${title}">`,
+    `<title>${title}</title>`,
     '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1f2937"/></marker></defs>',
     `<rect x="${num(minX)}" y="${num(minY)}" width="${width}" height="${height}" fill="#ffffff"/>`,
     ...body.filter(Boolean),
