@@ -3,7 +3,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { BRAND } from "./brand.js";
 import { CanvasError } from "./core/board.js";
-import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/principal.js";
+import { ActorConfigError, operatorActor } from "./actor.js";
+import type { Principal } from "./core/principal.js";
+import { runMcp } from "./mcp.js";
 import { CanvasService } from "./service.js";
 import { fileStore } from "./store.js";
 
@@ -23,6 +25,7 @@ Commands:
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
   export <board> [--format svg|png] [--out <path>]  Print SVG, or write PNG to --out.
+  mcp                                      Serve these as MCP tools on stdio. Needs CANVAS_ACTOR.
 
 Write commands need an actor in CANVAS_ACTOR as <kind>:<id>, such as "agent:helper".
 The operator sets it. A caller cannot pick its own kind: there is no --actor flag.
@@ -60,12 +63,12 @@ async function run(argv: string[]): Promise<void> {
     if (positionals.length !== count + 1) throw new UsageError(`usage: ${BRAND.command} ${command} ${shape}`);
   };
   const actor = (): Principal => {
-    const raw = process.env.CANVAS_ACTOR;
-    if (!raw) throw new UsageError(`"${command}" writes to a board: the operator must set CANVAS_ACTOR=<kind>:<id>`);
-    const at = raw.indexOf(":");
-    const parsed = principalSchema.safeParse({ kind: raw.slice(0, at), id: raw.slice(at + 1) });
-    if (at < 0 || !parsed.success) throw new UsageError(`bad CANVAS_ACTOR "${raw}": use <kind>:<id>, kind is one of ${PRINCIPAL_KINDS.join(", ")}`);
-    return parsed.data;
+    try {
+      return operatorActor();
+    } catch (error) {
+      if (error instanceof ActorConfigError) throw new UsageError(`"${command}" needs an actor: ${error.message}`);
+      throw error;
+    }
   };
   const service = new CanvasService(fileStore(v.dir ?? process.env.CANVAS_DIR ?? ".agentic-canvas"));
   const print = (value: unknown): void => console.log(JSON.stringify(value));
@@ -104,6 +107,9 @@ async function run(argv: string[]): Promise<void> {
       writeFileSync(v.out, data);
       return print({ out: v.out, format, bytes: data.length });
     }
+    case "mcp":
+      need(0, "");
+      return runMcp(service, actor());
     default:
       throw new UsageError(`unknown command "${command}"`);
   }

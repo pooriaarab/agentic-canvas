@@ -7,8 +7,8 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: early. The board model, the agent operations, the exports, and the CLI
-> work. It is not on npm yet. The MCP server, the HTTP API, and the web UI are
+> Status: early. The board model, the agent operations, the exports, the CLI,
+> and the MCP server work. It is not on npm yet. The HTTP API and the web UI are
 > not built yet.
 
 ## Install
@@ -41,6 +41,18 @@ Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
 needs an actor in `CANVAS_ACTOR`, as `<kind>:<id>`. The operator sets it. A write
 fails when it is unset, empty, or has a bad kind. The CLI has no `--actor` flag and no
 default actor, so a caller cannot pick its own kind. Only the operator can set `human`.
+
+## MCP server
+
+```sh
+CANVAS_ACTOR=agent:helper npx agentic-canvas --dir ./boards mcp
+```
+
+The server speaks MCP on stdio. It has one tool for each CLI command: `create_board`,
+`read_board`, `add_shape`, `connect`, `move`, `remove`, `draw_flow`, `export_svg`, and
+`export_png`. The server will not start unless `CANVAS_ACTOR` is set to a valid
+`<kind>:<id>`. That actor stamps every write. No tool takes an actor, author, or kind, so a
+caller cannot choose who it writes as. An error comes back as a tool error with a code.
 
 ## SDK
 
@@ -86,6 +98,7 @@ the direction. Lines that start with `#` or `//` are comments.
 - `svgToPng`: PNG through a headless Chromium with JavaScript off, service workers blocked,
   and every network request blocked. A board over 16 million pixels exports as SVG only.
 - A CLI over a local file store. Several processes can write at once.
+- An MCP server (stdio) over the same service as the CLI.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model runs in Node and in a Worker.
 
