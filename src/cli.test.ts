@@ -3,7 +3,8 @@
 //
 // Failure-mode list. These were written before the CLI and the store.
 //  1. No command, an unknown command, an unknown flag, wrong argument count: exit 2.
-//  2. A write with no actor, or with a bad actor: exit 2.
+//  2. A write with no actor, a bad actor, or an --actor that differs from
+//     CANVAS_ACTOR: exit 2.
 //  3. Unknown board: exit 1. A board id that climbs out of the folder: exit 1,
 //     and no file lands outside it.
 //  4. A blank or non-numeric number: exit 1 with a clear message.
@@ -117,6 +118,20 @@ describe("failures exit 1", () => {
     expect(r.code).toBe(1);
     expect(r.err).toContain("damaged");
     expect(r.err).not.toMatch(/\n\s+at /);
+  });
+});
+
+describe("actor", () => {
+  test("CANVAS_ACTOR fixes the actor, and a different --actor cannot override it", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b", ...human]);
+    const env = { CANVAS_ACTOR: "agent:bot" };
+    const clash = await cli(dir, ["add", "b", "--type", "rect", "--x", "0", "--y", "0", ...human], env);
+    expect([clash.code, clash.out]).toEqual([2, ""]);
+    await cli(dir, ["add", "b", "--type", "rect", "--x", "0", "--y", "0", "--actor", "agent:bot"], env);
+    await cli(dir, ["add", "b", "--type", "rect", "--x", "9", "--y", "0"], env);
+    const nodes = json(await cli(dir, ["read", "b"])).nodes;
+    expect(nodes.map((n: { author: { kind: string } }) => n.author.kind)).toEqual(["agent", "agent"]);
   });
 });
 

@@ -17,5 +17,5 @@ export type { DrawOptions, FlowEdge, FlowGraph, FlowNode, Placement } from "./co
 export { readBoard } from "./core/read.js";
 export type { BoardData, EdgeData, NodeData } from "./core/read.js";
 export { CanvasService } from "./service.js";
-export { fileStore, memoryStore } from "./store.js";
+export { fileStore } from "./store.js";
 export type { BoardStore, Doc, Json, StoreOps } from "./store.js";

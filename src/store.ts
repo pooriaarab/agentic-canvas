@@ -43,28 +43,6 @@ class Queue {
   }
 }
 
-export function memoryStore(): BoardStore {
-  const tables = new Map<string, Map<string, string>>();
-  const queue = new Queue();
-  const ops: StoreOps = {
-    async get(collection, id) {
-      check(collection, id);
-      const text = tables.get(collection)?.get(id);
-      return text === undefined ? null : (JSON.parse(text) as Doc);
-    },
-    async put(collection, id, doc) {
-      check(collection, id);
-      if (!tables.has(collection)) tables.set(collection, new Map());
-      tables.get(collection)!.set(id, JSON.stringify(doc));
-    },
-    async delete(collection, id) {
-      check(collection, id);
-      tables.get(collection)?.delete(id);
-    },
-  };
-  return { ...ops, transaction: (fn) => queue.run(() => fn(ops)) };
-}
-
 /** One JSON file per doc under `dir`. A lock directory keeps several processes apart. */
 export function fileStore(dir: string): BoardStore {
   const queue = new Queue();

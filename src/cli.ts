@@ -23,7 +23,8 @@ Commands:
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
 
-Write commands need an actor: --actor or CANVAS_ACTOR, such as "agent:helper".
+Write commands need an actor, such as "agent:helper": set CANVAS_ACTOR, or pass --actor.
+When CANVAS_ACTOR is set, it fixes the actor and --actor cannot differ.
 Kinds: human, agent_of_human, agent_of_agent, agent, user_token.
 The store folder is --dir, or CANVAS_DIR, or ./.agentic-canvas.`;
 
@@ -58,7 +59,9 @@ async function run(argv: string[]): Promise<void> {
     if (positionals.length !== count + 1) throw new UsageError(`usage: ${BRAND.command} ${command} ${shape}`);
   };
   const actor = (): Principal => {
-    const raw = v.actor ?? process.env.CANVAS_ACTOR;
+    const fixed = process.env.CANVAS_ACTOR;
+    if (fixed && v.actor && v.actor !== fixed) throw new UsageError("CANVAS_ACTOR fixes the actor: drop --actor, or make it match");
+    const raw = fixed || v.actor;
     if (!raw) throw new UsageError(`"${command}" writes to a board: pass --actor <kind>:<id> or set CANVAS_ACTOR`);
     const at = raw.indexOf(":");
     const parsed = principalSchema.safeParse({ kind: raw.slice(0, at), id: raw.slice(at + 1) });

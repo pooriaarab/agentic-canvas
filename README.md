@@ -31,7 +31,8 @@ npx agentic-canvas read demo              # nodes, edges, text as JSON
 
 Other commands: `add`, `connect`, `move`, `rm`. Run `npx agentic-canvas --help`.
 Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
-needs an actor: `--actor` or `CANVAS_ACTOR`. The CLI has no default actor.
+needs an actor: `CANVAS_ACTOR`, or `--actor`. When `CANVAS_ACTOR` is set it fixes the
+actor, and `--actor` cannot differ. The CLI has no default actor.
 
 ## SDK
 
