@@ -109,7 +109,11 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
 }
 
 const isBindable = (type: unknown): boolean => typeof type === "string" && type !== "connector" && type !== "group";
-const hasId = (e: Endpoint): e is { id: string } => "id" in e;
+const hasId = (e: unknown): e is { id: string } => typeof e === "object" && e !== null && typeof (e as { id?: unknown }).id === "string";
+const isPoint = (e: unknown): boolean => {
+  const p = e as { x?: unknown; y?: unknown } | null;
+  return typeof p === "object" && p !== null && typeof p.x === "number" && Number.isFinite(p.x) && typeof p.y === "number" && Number.isFinite(p.y);
+};
 
 /** A whiteboard on a Yjs doc. Headless: no UI code. Every write names its actor. */
 export class Board {
@@ -286,7 +290,8 @@ export class Board {
 
   private isDetached(el: CanvasElement): boolean {
     if (el.type !== "connector") return false;
-    return [el.from, el.to].some((e) => hasId(e) && !isBindable(this.typeOf(e.id)));
+    // A bound end must name a shape. A free end must be a finite point. Anything else is detached.
+    return [el.from, el.to].some((e) => (hasId(e) ? !isBindable(this.typeOf(e.id)) : !isPoint(e)));
   }
 
   private require(elementId: string): CanvasElement {

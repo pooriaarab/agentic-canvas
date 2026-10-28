@@ -15,6 +15,8 @@
 //     end: readers hide it, repair removes it, both peers converge.
 // 12. A peer group delete leaves members with a missing group: repair clears it.
 // 13. A peer update past the element cap is refused on decode.
+// 14. A peer plants a connector end that is a string, null, or a bad point:
+//     readers do not throw, they hide the connector, and repair removes it.
 import { describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { Board, CanvasError, MAX_ELEMENTS, type Shape } from "./board.js";
@@ -367,6 +369,24 @@ describe("concurrent delete", () => {
     expect(x.repair().sort()).toEqual(["a", "b"]);
     expect(x.get("a")?.groupId).toBeUndefined();
     expect(x.get("b")?.groupId).toBeUndefined();
+  });
+  test.each([
+    ["a string", "<script>"],
+    ["null", null],
+    ["a number", 7],
+    ["an object with no id and no point", { z: 1 }],
+    ["a point with a string", { x: "1", y: 2 }],
+    ["a point with NaN", { x: Number.NaN, y: 0 }],
+    ["an id that is not a string", { id: 5 }],
+  ])("a connector end that is %s is hidden, never thrown on, and repaired", (_name, value) => {
+    const [a, b] = pair();
+    b.addConnector({ id: "k", from: { id: "s" }, to: { id: "t" } }, agent);
+    sync(a, b);
+    a.doc.getMap<Y.Map<unknown>>("elements").get("k")!.set("to", value);
+    expect(ids(a)).toEqual(["s", "t"]);
+    expect(a.get("k")).toBeUndefined();
+    expect(() => a.remove("t")).not.toThrow();
+    expect(a.repair()).toEqual(["k"]);
   });
   test("decode refuses an update past the element cap", () => {
     const doc = new Y.Doc();
