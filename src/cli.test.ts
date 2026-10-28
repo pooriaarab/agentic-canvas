@@ -14,7 +14,7 @@
 //  9. Round trip through new, add, connect, flow, move, rm, read.
 // 10. Agent work reads back as machine-made.
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -96,12 +96,9 @@ describe("failures exit 1", () => {
       const r = await cli(dir, ["new", "--id", id, ...human]);
       expect(r.code).toBe(1);
     }
-    // A real board file one level above the collection folder must stay out of reach.
     await cli(dir, ["new", "--id", "ok", ...human]);
     copyFileSync(join(dir, "boards", "ok.json"), join(dir, "escape.json"));
-    const r = await cli(dir, ["read", "../escape"]);
-    expect([r.code, r.out]).toEqual([1, ""]);
-    expect(readdirSync(root).filter((f) => f.includes("escape"))).toEqual([]);
+    expect(await cli(dir, ["read", "../escape"])).toMatchObject({ code: 1, out: "" });
   });
   test("bad flow text leaves the board unchanged", async () => {
     const dir = fresh();

@@ -95,7 +95,6 @@ the direction. Lines that start with `#` or `//` are comments.
   the last writer wins.
 - Frames are plain shapes. They do not own the shapes inside them yet.
 - Delete leaves no audit record yet. The caller logs it.
-- The local store is for one machine. A shared store comes with the Worker API.
 
 ## License
 
