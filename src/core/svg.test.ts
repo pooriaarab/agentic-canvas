@@ -212,9 +212,10 @@ describe("svg: a peer plants every field", () => {
     });
     expect(inspect(svg)).toEqual([]);
   });
-  test("a planted kind is labelled unknown and counts as machine-made", () => {
+  test("a planted author kind drops the element, because the board hides it", () => {
     const svg = planted((shape) => shape.set("author", bad));
-    expect(svg).toMatch(/data-id="a" data-type="rect" data-author-kind="unknown" data-machine-made="true"/);
+    expect(svg).not.toContain('data-id="a"');
+    expect(inspect(svg)).toEqual([]);
   });
   test("a planted type is dropped", () => {
     const svg = planted((shape) => shape.set("type", QUOTE));
