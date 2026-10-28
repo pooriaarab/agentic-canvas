@@ -38,6 +38,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "agentic-canvas": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",

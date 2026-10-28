@@ -26,6 +26,15 @@ drawFlow(board, "A[Start] -> B{Ok?}: go\nB -> C: yes", bot);
 readBoard(board);
 ```
 
+## Use the CLI
+
+```sh
+export CANVAS_ACTOR=agent:helper
+agentic-canvas new --id demo
+agentic-canvas flow demo --text "A -> B: go"
+agentic-canvas read demo
+```
+
 ## Rules
 
 - Name the actor on every write.

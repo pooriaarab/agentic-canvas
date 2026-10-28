@@ -7,8 +7,8 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: early. The board model and the agent operations work. It is not on npm
-> yet. The CLI, the MCP server, the exporters, the HTTP API, and the web UI are
+> Status: early. The board model, the agent operations, and the CLI work. It is
+> not on npm yet. The exporters, the MCP server, the HTTP API, and the web UI are
 > not built yet.
 
 ## Install
@@ -21,6 +21,21 @@ npm run build
 ```
 
 ## Quick start
+
+```sh
+export CANVAS_ACTOR=agent:helper          # who writes: <kind>:<id>
+npx agentic-canvas new --id demo --title "Release flow"
+npx agentic-canvas flow demo --text $'direction LR\nCode(Write code) -> Test{Tests pass?}: push\nTest -> Ship[Ship it]: yes'
+npx agentic-canvas read demo              # nodes, edges, text as JSON
+```
+
+Other commands: `add`, `connect`, `move`, `rm`. Run `npx agentic-canvas --help`.
+Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
+needs an actor in `CANVAS_ACTOR`, as `<kind>:<id>`. The operator sets it. A write
+fails when it is unset, empty, or has a bad kind. The CLI has no `--actor` flag and no
+default actor, so a caller cannot pick its own kind. Only the operator can set `human`.
+
+## SDK
 
 ```ts
 import { Board } from "agentic-canvas";
@@ -59,6 +74,7 @@ the direction. Lines that start with `#` or `//` are comments.
   flag on each.
 - `drawFlow`: a flowchart from text with a layered layout. It adds nothing when
   anything fails.
+- A CLI over a local file store. Several processes can write at once.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model runs in Node and in a Worker.
 
@@ -80,6 +96,8 @@ the direction. Lines that start with `#` or `//` are comments.
 - `move` writes absolute positions. Two peers that move one shape at the same time do not add up:
   the last writer wins.
 - Frames are plain shapes. They do not own the shapes inside them yet.
+- A crash can leave `.lock` in the store folder. Every call then waits 10 seconds and fails
+  with `UNAVAILABLE`. Remove the folder by hand. There is no stale-lock check yet.
 - Delete leaves no audit record yet. The caller logs it.
 
 ## License
