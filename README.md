@@ -51,6 +51,9 @@ board.list(); // every element, back to front
   SVG are refused.
 - Two peers that make the same explicit id at the same time keep only one element, with no
   error. Explicit ids are safe with one writer. Leave `id` empty and the board picks a random one.
+- A synced update is untrusted. An element that fails the write rules is hidden, and `repair()`
+  deletes it. A board past the element cap refuses to load or read.
+- `update` cannot clear a required field. Only `fill` and `stroke` accept `undefined`.
 - Delete against connect can leave a connector with a missing end. Readers hide it. `repair()`
   removes it, and `Board.decode` runs `repair()` for you.
 - `move` writes absolute positions. Two peers that move one shape at the same time do not add up:

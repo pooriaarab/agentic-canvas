@@ -17,6 +17,14 @@
 // 13. A peer update past the element cap is refused on decode.
 // 14. A peer plants a connector end that is a string, null, or a bad point:
 //     readers do not throw, they hide the connector, and repair removes it.
+// 15. A peer writes raw Yjs: an entry that is not a map, a remote or script image,
+//     a bad colour, NaN or huge numbers, an unknown type, a bad z, a bad author, an
+//     id that differs from its key. Every read hides it, decode and repair delete it,
+//     and the valid elements next to it keep working.
+// 16. A peer edit makes an existing element invalid, or breaks the title: hidden.
+// 17. A board past the element cap refuses to read.
+// 18. update refuses undefined for every required field, and a rejected patch
+//     leaves the board able to remove and move.
 import { describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { Board, CanvasError, MAX_ELEMENTS, type Shape } from "./board.js";
@@ -406,5 +414,217 @@ describe("element cap", () => {
     for (let i = 0; i < 50; i++) board.addShape(rect(0, 0, { id: `s${i}` }), human);
     expect(code(() => board.addShape(rect(), human))).toBe("LIMIT");
     expect(board.list()).toHaveLength(50);
+  });
+});
+
+describe("malicious peer update", () => {
+  const entry = (elementId: string, extra: Record<string, unknown> = {}) =>
+    new Y.Map(Object.entries({ id: elementId, type: "rect", z: 1, x: 0, y: 0, w: 10, h: 10, text: "", author: human, editedBy: human, ...extra }));
+  const image = (src: unknown) => entry("evil", { type: "image", src });
+  const connector = (extra: Record<string, unknown>) =>
+    new Y.Map(Object.entries({ id: "evil", type: "connector", z: 1, from: { id: "ok" }, to: { id: "ok" }, text: "", startArrow: false, endArrow: true, author: human, editedBy: human, ...extra }));
+
+  function seeded(): Board {
+    const board = new Board();
+    board.addShape(rect(0, 0, { id: "ok" }), human);
+    return board;
+  }
+  /** What a peer sends when it skips Board and writes raw Yjs. */
+  function craft(edit: (elements: Y.Map<unknown>) => void): Uint8Array {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, seeded().encode());
+    doc.transact(() => edit(doc.getMap("elements")));
+    return Y.encodeStateAsUpdate(doc);
+  }
+  const keys = (b: Board) => [...b.doc.getMap("elements").keys()].sort();
+
+  const planted: [string, string, () => unknown][] = [
+    ["a plain object", "evil", () => ({ id: "evil", type: "rect" })],
+    ["a string", "evil", () => "x"],
+    ["a number", "evil", () => 7],
+    ["null", "evil", () => null],
+    ["a remote http image", "evil", () => image("http://example.com/a.png")],
+    ["a remote https image", "evil", () => image("https://example.com/a.png")],
+    ["a protocol-relative image", "evil", () => image("//example.com/a.png")],
+    ["a script image", "evil", () => image("javascript:alert(1)")],
+    ["an svg data image", "evil", () => image("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")],
+    ["an html data image", "evil", () => image("data:text/html;base64,AAAA")],
+    ["an image with no src", "evil", () => entry("evil", { type: "image" })],
+    ["a rect with a src", "evil", () => entry("evil", { src: "blob:k1" })],
+    ["a src that is not a string", "evil", () => image(5)],
+    ["a fill that breaks out of an attribute", "evil", () => entry("evil", { fill: 'red" onload="x' })],
+    ["a stroke that is a url", "evil", () => entry("evil", { stroke: "url(https://example.com/x)" })],
+    ["a stroke that is a number", "evil", () => entry("evil", { stroke: 5 })],
+    ["x that is NaN", "evil", () => entry("evil", { x: Number.NaN })],
+    ["w that is Infinity", "evil", () => entry("evil", { w: Number.POSITIVE_INFINITY })],
+    ["x that is huge", "evil", () => entry("evil", { x: 1e12 })],
+    ["w that is zero", "evil", () => entry("evil", { w: 0 })],
+    ["h that is negative", "evil", () => entry("evil", { h: -5 })],
+    ["x that is a string", "evil", () => entry("evil", { x: "1" })],
+    ["text past the cap", "evil", () => entry("evil", { text: "a".repeat(10_001) })],
+    ["text that is an object", "evil", () => entry("evil", { text: { a: 1 } })],
+    ["an unknown type", "evil", () => entry("evil", { type: "script" })],
+    ["a missing type", "evil", () => entry("evil", { type: undefined })],
+    ["z that is NaN", "evil", () => entry("evil", { z: Number.NaN })],
+    ["z that is a string", "evil", () => entry("evil", { z: "9" })],
+    ["z that is Infinity", "evil", () => entry("evil", { z: Number.POSITIVE_INFINITY })],
+    ["an author with an unknown kind", "evil", () => entry("evil", { author: { kind: "robot", id: "r" } })],
+    ["an author that is null", "evil", () => entry("evil", { author: null })],
+    ["an editor with an extra field", "evil", () => entry("evil", { editedBy: { kind: "human", id: "h", admin: true } })],
+    ["an id that differs from its key", "evil", () => entry("other")],
+    ["an id with bad characters", 'ev"il', () => entry('ev"il')],
+    ["a group id that is an object", "evil", () => entry("evil", { groupId: { a: 1 } })],
+    ["a connector end that is null", "evil", () => connector({ to: null })],
+    ["a connector end with a string id number", "evil", () => connector({ from: { id: 5 } })],
+    ["a connector arrow that is a string", "evil", () => connector({ endArrow: "yes" })],
+    ["a connector bound to a missing shape", "evil", () => connector({ to: { id: "nope" } })],
+    ["a connector bound to an invalid shape", "evil", () => connector({ to: { id: "bad" } })],
+  ];
+
+  const add = (elements: Y.Map<unknown>, key: string, make: () => unknown) => {
+    elements.set("bad", entry("bad", { x: Number.NaN }));
+    elements.set(key, make());
+  };
+
+  test.each(planted)("decode hides %s, deletes it, and keeps the valid element working", (_name, key, make) => {
+    const board = Board.decode(craft((els) => add(els, key, make)));
+    expect(board.list().map((e) => e.id)).toEqual(["ok"]);
+    expect(board.get(key)).toBeUndefined();
+    expect(keys(board)).toEqual(["ok"]);
+    expect(() => board.addShape(rect(5, 5, { id: "new" }), human)).not.toThrow();
+    expect(() => board.reorder("ok", "front", human)).not.toThrow();
+    expect(board.move("ok", 1, 1, human)).toEqual(["ok"]);
+    expect(board.remove("ok")).toEqual(["ok"]);
+  });
+
+  test.each(planted)("a live board hides %s that a peer wrote through the doc, and repair removes it", (_name, key, make) => {
+    const board = seeded();
+    Y.applyUpdate(board.doc, craft((els) => add(els, key, make)));
+    expect(board.list().map((e) => e.id)).toEqual(["ok"]);
+    expect(board.get(key)).toBeUndefined();
+    expect(() => board.addShape(rect(5, 5, { id: "new" }), human)).not.toThrow();
+    expect(board.repair()).toEqual([...new Set(["bad", key])].sort());
+    expect(keys(board)).toEqual(["new", "ok"]);
+  });
+
+  test("a valid connector bound to an invalid shape is hidden and repaired with it", () => {
+    const board = Board.decode(
+      craft((els) => {
+        els.set("evil", entry("evil", { type: "image", src: "https://example.com/a.png" }));
+        els.set("k", connector({ id: "k", from: { id: "ok" }, to: { id: "evil" } }));
+      }),
+    );
+    expect(board.list().map((e) => e.id)).toEqual(["ok"]);
+    expect(keys(board)).toEqual(["ok"]);
+  });
+
+  test("a peer edit that corrupts a valid element hides it", () => {
+    const board = seeded();
+    board.doc.getMap<Y.Map<unknown>>("elements").get("ok")!.set("fill", 'red" onload="x');
+    expect(board.list()).toEqual([]);
+    expect(code(() => board.update("ok", { text: "t" }, human))).toBe("NOT_FOUND");
+    expect(board.repair()).toEqual(["ok"]);
+  });
+
+  test("a read returns only known fields", () => {
+    const board = Board.decode(craft((els) => els.set("extra", entry("extra", { onclick: "x()", y2: 1 }))));
+    expect(Object.keys(board.get("extra")!).sort()).toEqual(["author", "editedBy", "h", "id", "text", "type", "w", "x", "y", "z"]);
+  });
+
+  test("a bad z from a peer does not decide where new elements go", () => {
+    const board = Board.decode(craft((els) => els.set("evil", entry("evil", { z: "999" }))));
+    const added = board.addShape(rect(), human);
+    expect(Number.isFinite(added.z)).toBe(true);
+    expect(added.z).toBe(2);
+  });
+
+  test("two peers drop the same entries from the same update", () => {
+    const update = craft((els) => planted.slice(0, 20).forEach(([, key, make], i) => els.set(`${key}${i}`, make())));
+    const a = Board.decode(update);
+    const b = Board.decode(update);
+    expect(keys(a)).toEqual(keys(b));
+    expect(a.list()).toEqual(b.list());
+  });
+
+  test("a title or title author a peer breaks reads as empty", () => {
+    const board = seeded();
+    board.doc.getMap("meta").set("title", 7);
+    board.doc.getMap("meta").set("titleBy", { kind: "robot", id: "x" });
+    expect(board.title).toBe("");
+    expect(board.titleBy).toBeUndefined();
+    board.doc.getMap("meta").set("title", "t".repeat(201));
+    expect(board.title).toBe("");
+  });
+
+  test("a live board past the element cap refuses to read", () => {
+    const board = seeded();
+    Y.applyUpdate(
+      board.doc,
+      craft((els) => {
+        for (let i = 0; i <= MAX_ELEMENTS; i++) els.set(`s${i}`, entry(`s${i}`, { z: i }));
+      }),
+    );
+    expect(code(() => board.list())).toBe("LIMIT");
+  });
+});
+
+describe("update refuses to clear a required field", () => {
+  function setup(): Board {
+    const board = new Board();
+    board.addShape(rect(0, 0, { id: "r", text: "t", fill: "#fff", stroke: "red" }), human);
+    board.addShape({ id: "i", type: "image", x: 0, y: 0, src: "blob:k1" }, human);
+    board.addShape(rect(200, 0, { id: "t" }), human);
+    board.addConnector({ id: "k", from: { id: "r" }, to: { id: "t" }, text: "go", stroke: "blue" }, human);
+    return board;
+  }
+  test.each(["x", "y", "w", "h", "text"])("a shape keeps %s when a patch sets it to undefined", (field) => {
+    const board = setup();
+    const before = board.get("r");
+    expect(code(() => board.update("r", { [field]: undefined }, agent))).toBe("INVALID");
+    expect(board.get("r")).toEqual(before);
+  });
+  test("an image keeps its src", () => {
+    const board = setup();
+    const before = board.get("i");
+    expect(code(() => board.update("i", { src: undefined }, agent))).toBe("INVALID");
+    expect(board.get("i")).toEqual(before);
+  });
+  test.each(["from", "to", "text", "startArrow", "endArrow"])("a connector keeps %s when a patch sets it to undefined", (field) => {
+    const board = setup();
+    const before = board.get("k");
+    expect(code(() => board.update("k", { [field]: undefined }, agent))).toBe("INVALID");
+    expect(board.get("k")).toEqual(before);
+  });
+  test("one cleared required field voids the whole patch", () => {
+    const board = setup();
+    const before = board.get("r");
+    expect(code(() => board.update("r", { y: 50, x: undefined }, agent))).toBe("INVALID");
+    expect(board.get("r")).toEqual(before);
+  });
+  test("fill and stroke can still be cleared", () => {
+    const board = setup();
+    board.update("r", { fill: undefined, stroke: undefined }, agent);
+    expect(board.get("r")).not.toHaveProperty("fill");
+    expect(board.get("r")).not.toHaveProperty("stroke");
+    board.update("k", { stroke: undefined }, agent);
+    expect(board.get("k")).not.toHaveProperty("stroke");
+  });
+  test("an empty patch is still refused", () => {
+    expect(code(() => setup().update("r", {}, human))).toBe("INVALID");
+  });
+  test("remove and move keep working after a rejected connector patch", () => {
+    const board = setup();
+    expect(code(() => board.update("k", { from: undefined, to: undefined }, agent))).toBe("INVALID");
+    expect(board.move("r", 5, 5, human)).toEqual(["r"]);
+    expect(board.get("r")).toMatchObject({ x: 5, y: 5 });
+    expect(board.remove("r")).toEqual(["k", "r"]);
+    expect(board.list().map((e) => e.id)).toEqual(["i", "t"]);
+  });
+  test("remove and move keep working after a rejected shape patch", () => {
+    const board = setup();
+    expect(code(() => board.update("r", { x: undefined, w: undefined }, agent))).toBe("INVALID");
+    expect(board.move("r", 3, 4, human)).toEqual(["r"]);
+    expect(board.get("r")).toMatchObject({ x: 3, y: 4, w: 120 });
+    expect(board.remove("t")).toEqual(["k", "t"]);
   });
 });

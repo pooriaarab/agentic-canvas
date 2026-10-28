@@ -99,6 +99,32 @@ const shapePatch = z.object({ x: coord, y: coord, w: size, h: size, text, fill: 
 const connectorPatch = z.object({ from: endpoint, to: endpoint, text, startArrow: z.boolean(), endArrow: z.boolean(), stroke: color }).partial().strict();
 const delta = z.number().finite().min(-2e7).max(2e7);
 
+// What a stored element must look like. Peers write raw Yjs, so every read checks this.
+const MAX_Z = 1e9;
+const stampFields = {
+  id,
+  z: z.number().finite().min(-MAX_Z).max(MAX_Z),
+  groupId: id.optional(),
+  author: principalSchema,
+  editedBy: principalSchema,
+};
+const storedShape = z
+  .object({ ...stampFields, type: z.enum(SHAPE_TYPES), x: coord, y: coord, w: size, h: size, text, fill: color.optional(), stroke: color.optional(), src: imageSrc.optional() })
+  .refine((s) => (s.type === "image") === (s.src !== undefined), { message: "src is required for image shapes and allowed on no other type" });
+const storedConnector = z.object({
+  ...stampFields,
+  type: z.literal("connector"),
+  from: endpoint,
+  to: endpoint,
+  text,
+  startArrow: z.boolean(),
+  endArrow: z.boolean(),
+  stroke: color.optional(),
+});
+const storedGroup = z.object({ ...stampFields, type: z.literal("group") });
+const storedElement = z.union([storedShape, storedConnector, storedGroup]);
+const titleSchema = z.string().max(200);
+
 function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
   const result = schema.safeParse(value);
   if (!result.success) {
@@ -109,13 +135,17 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
 }
 
 const isBindable = (type: unknown): boolean => typeof type === "string" && type !== "connector" && type !== "group";
+const isValidZ = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= MAX_Z;
 const hasId = (e: unknown): e is { id: string } => typeof e === "object" && e !== null && typeof (e as { id?: unknown }).id === "string";
-const isPoint = (e: unknown): boolean => {
-  const p = e as { x?: unknown; y?: unknown } | null;
-  return typeof p === "object" && p !== null && typeof p.x === "number" && Number.isFinite(p.x) && typeof p.y === "number" && Number.isFinite(p.y);
-};
 
-/** A whiteboard on a Yjs doc. Headless: no UI code. Every write names its actor. */
+/**
+ * A whiteboard on a Yjs doc. Headless: no UI code. Every write names its actor.
+ *
+ * A synced Yjs update is untrusted input. Every read checks each stored element against the same
+ * rules the write methods enforce, and returns only the checked fields. An entry that fails is
+ * hidden at once. `repair()` deletes it, and `Board.decode` runs `repair()`. This holds even
+ * when a caller writes to `doc` directly.
+ */
 export class Board {
   readonly doc: Y.Doc;
   private readonly elements: Y.Map<Y.Map<unknown>>;
@@ -129,7 +159,10 @@ export class Board {
     this.meta = doc.getMap("meta");
   }
 
-  /** Load a saved board. Refuses a doc past the element cap, then repairs what concurrent writers left broken. */
+  /**
+   * Load a saved board. Refuses a doc past the element cap. Then it deletes every entry that fails
+   * the element checks, and repairs what concurrent writers left broken.
+   */
   static decode(update: Uint8Array): Board {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, update);
@@ -144,11 +177,13 @@ export class Board {
   }
 
   get title(): string {
-    return (this.meta.get("title") as string | undefined) ?? "";
+    const value = titleSchema.safeParse(this.meta.get("title"));
+    return value.success ? value.data : "";
   }
 
   get titleBy(): Principal | undefined {
-    return this.meta.get("titleBy") as Principal | undefined;
+    const value = principalSchema.safeParse(this.meta.get("titleBy"));
+    return value.success ? value.data : undefined;
   }
 
   setTitle(title: string, actor: Principal): void {
@@ -160,30 +195,35 @@ export class Board {
     });
   }
 
-  /** One element. A connector with a missing bound end counts as detached and is hidden. */
+  /** One element. An invalid entry, or a connector with a missing bound end, is hidden. */
   get(elementId: string): CanvasElement | undefined {
-    const el = this.elements.get(elementId)?.toJSON() as CanvasElement | undefined;
-    return el && !this.isDetached(el) ? el : undefined;
+    const el = this.stored(elementId);
+    return el && !this.isDetached(el, (endId) => this.stored(endId)) ? el : undefined;
   }
 
   /** All visible elements from back to front. */
   list(): CanvasElement[] {
-    return this.rawList().filter((e) => !this.isDetached(e));
+    const all = this.storedList();
+    const byId = new Map(all.map((e) => [e.id, e]));
+    return all.filter((e) => !this.isDetached(e, (endId) => byId.get(endId)));
   }
 
   /**
-   * Delete what two writers can leave broken after a merge: connectors whose bound end is gone,
-   * and members that name a deleted group. Idempotent, so every peer may run it. Returns the ids fixed.
+   * Delete what peers can leave broken: entries that fail the element checks, connectors whose
+   * bound end is gone, and members that name a deleted group. Idempotent, so every peer may run it.
+   * Returns the ids fixed.
    */
   repair(): string[] {
-    const all = this.rawList();
-    const detached = all.filter((e) => this.isDetached(e)).map((e) => e.id);
-    const loose = all.filter((e) => e.groupId !== undefined && this.typeOf(e.groupId) !== "group").map((e) => e.id);
+    const all = this.storedList();
+    const byId = new Map(all.map((e) => [e.id, e]));
+    const invalid = [...this.elements.keys()].filter((key) => !byId.has(key));
+    const detached = all.filter((e) => this.isDetached(e, (endId) => byId.get(endId))).map((e) => e.id);
+    const loose = all.filter((e) => e.groupId !== undefined && byId.get(e.groupId)?.type !== "group").map((e) => e.id);
     this.doc.transact(() => {
-      detached.forEach((d) => this.elements.delete(d));
-      loose.forEach((l) => this.elements.get(l)?.delete("groupId"));
+      [...invalid, ...detached].forEach((d) => this.elements.delete(d));
+      loose.forEach((l) => (this.elements.get(l) as Y.Map<unknown> | undefined)?.delete("groupId"));
     });
-    return [...new Set([...detached, ...loose])].sort();
+    return [...new Set([...invalid, ...detached, ...loose])].sort();
   }
 
   addShape(input: unknown, actor: Principal): Shape {
@@ -204,6 +244,10 @@ export class Board {
     if (el.type === "group") throw new CanvasError("INVALID", "a group has no fields to update");
     const fields: Record<string, unknown> = parse(el.type === "connector" ? connectorPatch : shapePatch, patch);
     if (Object.keys(fields).length === 0) throw new CanvasError("INVALID", "patch is empty");
+    // The patch schemas let `undefined` through. Only fill and stroke may be cleared.
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === undefined && key !== "fill" && key !== "stroke") throw new CanvasError("INVALID", `${key} cannot be cleared`);
+    }
     if ("src" in fields && el.type !== "image") throw new CanvasError("INVALID", "only an image has a src");
     if (el.type === "connector") {
       this.checkEnd(fields.from as Endpoint | undefined);
@@ -238,7 +282,7 @@ export class Board {
   remove(elementId: string): string[] {
     this.require(elementId);
     const doomed = new Set(this.subtree(elementId));
-    for (const el of this.rawList()) {
+    for (const el of this.storedList()) {
       if (el.type === "connector" && [el.from, el.to].some((e) => hasId(e) && doomed.has(e.id))) doomed.add(el.id);
     }
     this.doc.transact(() => doomed.forEach((d) => this.elements.delete(d)));
@@ -279,19 +323,29 @@ export class Board {
     this.write(members.map((m, i) => [m.id, { z: start + i }]), by);
   }
 
-  private rawList(): CanvasElement[] {
-    const all = [...this.elements.values()].map((m) => m.toJSON() as CanvasElement);
+  /** One stored element that passes the checks and whose id matches its key, or undefined. */
+  private stored(key: string): CanvasElement | undefined {
+    const entry: unknown = this.elements.get(key);
+    if (!(entry instanceof Y.Map)) return undefined;
+    const parsed = storedElement.safeParse(entry.toJSON());
+    return parsed.success && parsed.data.id === key ? (parsed.data as CanvasElement) : undefined;
+  }
+
+  /** Every stored element that passes the checks, from back to front. Refuses a doc past the cap. */
+  private storedList(): CanvasElement[] {
+    if (this.elements.size > MAX_ELEMENTS) throw new CanvasError("LIMIT", `a board holds at most ${MAX_ELEMENTS} elements`);
+    const all: CanvasElement[] = [];
+    for (const key of this.elements.keys()) {
+      const el = this.stored(key);
+      if (el) all.push(el);
+    }
     return all.sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
 
-  private typeOf(elementId: string): unknown {
-    return this.elements.get(elementId)?.get("type");
-  }
-
-  private isDetached(el: CanvasElement): boolean {
+  /** A connector is detached when a bound end does not name a stored shape. */
+  private isDetached(el: CanvasElement, lookup: (elementId: string) => CanvasElement | undefined): boolean {
     if (el.type !== "connector") return false;
-    // A bound end must name a shape. A free end must be a finite point. Anything else is detached.
-    return [el.from, el.to].some((e) => (hasId(e) ? !isBindable(this.typeOf(e.id)) : !isPoint(e)));
+    return [el.from, el.to].some((e) => hasId(e) && !isBindable(lookup(e.id)?.type));
   }
 
   private require(elementId: string): CanvasElement {
@@ -302,7 +356,7 @@ export class Board {
 
   private checkEnd(end: Endpoint | undefined): void {
     if (!end || !hasId(end)) return;
-    if (!isBindable(this.typeOf(end.id))) {
+    if (!isBindable(this.stored(end.id)?.type)) {
       throw new CanvasError("BAD_REFERENCE", `"${end.id}" is not a shape a connector can bind to`);
     }
   }
@@ -310,8 +364,8 @@ export class Board {
   private edgeZ(direction: 1 | -1): number {
     let z = 0;
     for (const m of this.elements.values()) {
-      const value = m.get("z") as number;
-      z = direction === 1 ? Math.max(z, value) : Math.min(z, value);
+      const value: unknown = m instanceof Y.Map ? m.get("z") : undefined;
+      if (isValidZ(value)) z = direction === 1 ? Math.max(z, value) : Math.min(z, value);
     }
     return z + direction;
   }
@@ -319,8 +373,7 @@ export class Board {
   /** The element and, for a group, everything below it. Cycle-safe. */
   private subtree(elementId: string): string[] {
     const children = new Map<string, string[]>();
-    for (const [childId, m] of this.elements) {
-      const parent = m.get("groupId") as string | undefined;
+    for (const { id: childId, groupId: parent } of this.storedList()) {
       if (parent !== undefined) children.set(parent, [...(children.get(parent) ?? []), childId]);
     }
     const seen = new Set([elementId]);
