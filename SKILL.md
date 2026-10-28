@@ -33,6 +33,7 @@ export CANVAS_ACTOR=agent:helper
 agentic-canvas new --id demo
 agentic-canvas flow demo --text "A -> B: go"
 agentic-canvas read demo
+agentic-canvas export demo --out demo.svg
 ```
 
 ## Rules

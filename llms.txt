@@ -4,8 +4,8 @@ A shared whiteboard for diagrams, drawn by people and agents.
 
 Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 
-- SDK: import { Board, drawFlow, readBoard } from "agentic-canvas".
-- CLI: agentic-canvas new|read|add|connect|move|rm|flow.
+- SDK: import { Board, drawFlow, readBoard, toSvg } from "agentic-canvas".
+- CLI: agentic-canvas new|read|add|connect|move|rm|flow|export.
 
 ## Docs
 

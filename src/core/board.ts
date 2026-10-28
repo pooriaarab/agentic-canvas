@@ -58,13 +58,12 @@ const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const coord = z.number().finite().min(-1e7).max(1e7);
 const size = z.number().finite().gt(0).max(1e7);
 const text = z.string().max(MAX_TEXT);
-// Colours go into SVG attributes later, so allow only hex and plain names.
-const color = z.string().regex(/^(#[0-9a-fA-F]{3,8}|[a-z]{3,20})$/);
+// Colours go into SVG attributes, so allow only hex and plain names.
+export const COLOR_PATTERN = /^(#[0-9a-fA-F]{3,8}|[a-z]{3,20})$/;
 // No remote URLs (no outbound calls) and no SVG (script risk). Bytes live in the blob store.
-const imageSrc = z
-  .string()
-  .max(2_000_000)
-  .regex(/^(data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*|blob:[A-Za-z0-9._-]{1,200})$/);
+export const IMAGE_PATTERN = /^(data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*|blob:[A-Za-z0-9._-]{1,200})$/;
+const color = z.string().regex(COLOR_PATTERN);
+const imageSrc = z.string().max(2_000_000).regex(IMAGE_PATTERN);
 const endpoint = z.union([z.object({ id }).strict(), z.object({ x: coord, y: coord }).strict()]);
 
 const shapeInput = z

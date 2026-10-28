@@ -12,7 +12,7 @@ actor. The author kind never changes.
 
 - SDK: `import { Board, readBoard, drawFlow } from "agentic-canvas"`.
 - CLI: `npx agentic-canvas <command>`. Set `CANVAS_ACTOR=agent:<name>` first.
-  Commands: new, read, add, connect, move, rm, flow.
+  Commands: new, read, add, connect, move, rm, flow, export.
 - MCP and HTTP API: not built yet.
 
 Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
@@ -23,6 +23,7 @@ Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 2. Change the board with `addShape`, `addConnector`, `update`, `move`, `remove`.
 3. Or call `drawFlow(board, "A -> B: label", actor)` to draw a flowchart.
 4. Read the board again to check the result.
+5. Export with `toSvg(board)`, or `export <board>` on the CLI.
 
 ## Rules
 
