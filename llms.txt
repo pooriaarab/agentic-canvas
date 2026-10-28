@@ -4,12 +4,9 @@ A shared whiteboard for diagrams, drawn by people and agents.
 
 Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 
-- SDK: import { summarizeText, dispatchText } from "agentic-canvas".
-- CLI: agentic-canvas summary --text "...".
-- MCP: run agentic-canvas mcp, then call summarize_text.
+- SDK: import { Board } from "agentic-canvas".
 
 ## Docs
 
 - README: https://github.com/pooriaarab/agentic-canvas
-- Core contract: https://github.com/pooriaarab/agentic-canvas/blob/main/docs/agentic-core.md
 - License: MIT
