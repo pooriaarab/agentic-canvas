@@ -18,6 +18,8 @@ export { readBoard } from "./core/read.js";
 export type { BoardData, EdgeData, NodeData } from "./core/read.js";
 export { toSvg } from "./core/svg.js";
 export { svgToPng } from "./png.js";
+export { ActorConfigError, operatorActor } from "./actor.js";
+export { createMcpServer, runMcp } from "./mcp.js";
 export { CanvasService } from "./service.js";
 export { fileStore } from "./store.js";
 export type { BoardStore, Doc, Json, StoreOps } from "./store.js";
