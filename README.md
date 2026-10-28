@@ -7,8 +7,8 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: early. The board model and the agent operations work. It is not on npm
-> yet. The CLI, the MCP server, the exporters, the HTTP API, and the web UI are
+> Status: early. The board model, the agent operations, and the CLI work. It is
+> not on npm yet. The exporters, the MCP server, the HTTP API, and the web UI are
 > not built yet.
 
 ## Install
@@ -21,6 +21,19 @@ npm run build
 ```
 
 ## Quick start
+
+```sh
+export CANVAS_ACTOR=agent:helper          # who writes: <kind>:<id>
+npx agentic-canvas new --id demo --title "Release flow"
+npx agentic-canvas flow demo --text $'direction LR\nCode(Write code) -> Test{Tests pass?}: push\nTest -> Ship[Ship it]: yes'
+npx agentic-canvas read demo              # nodes, edges, text as JSON
+```
+
+Other commands: `add`, `connect`, `move`, `rm`. Run `npx agentic-canvas --help`.
+Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
+needs an actor: `--actor` or `CANVAS_ACTOR`. The CLI has no default actor.
+
+## SDK
 
 ```ts
 import { Board } from "agentic-canvas";
@@ -59,6 +72,7 @@ the direction. Lines that start with `#` or `//` are comments.
   flag on each.
 - `drawFlow`: a flowchart from text with a layered layout. It adds nothing when
   anything fails.
+- A CLI over a local file store. Several processes can write at once.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model runs in Node and in a Worker.
 
@@ -81,6 +95,7 @@ the direction. Lines that start with `#` or `//` are comments.
   the last writer wins.
 - Frames are plain shapes. They do not own the shapes inside them yet.
 - Delete leaves no audit record yet. The caller logs it.
+- The local store is for one machine. A shared store comes with the Worker API.
 
 ## License
 

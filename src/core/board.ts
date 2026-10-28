@@ -2,7 +2,7 @@ import * as Y from "yjs";
 import { z } from "zod";
 import { principalSchema, type Principal } from "./principal.js";
 
-export type ErrorCode = "INVALID" | "DUPLICATE_ID" | "NOT_FOUND" | "BAD_REFERENCE" | "LIMIT";
+export type ErrorCode = "INVALID" | "DUPLICATE_ID" | "NOT_FOUND" | "BAD_REFERENCE" | "LIMIT" | "UNAVAILABLE";
 
 export class CanvasError extends Error {
   constructor(

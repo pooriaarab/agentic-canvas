@@ -11,7 +11,9 @@ actor. The author kind never changes.
 ## Faces
 
 - SDK: `import { Board, readBoard, drawFlow } from "agentic-canvas"`.
-- CLI and MCP: not built yet.
+- CLI: `npx agentic-canvas <command>`. Set `CANVAS_ACTOR=agent:<name>` first.
+  Commands: new, read, add, connect, move, rm, flow.
+- MCP and HTTP API: not built yet.
 
 Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 
