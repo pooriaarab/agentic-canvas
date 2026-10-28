@@ -7,8 +7,9 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: early. Only the board model works. It is not on npm yet. The CLI, the
-> MCP server, the HTTP API, and the web UI are not built yet.
+> Status: early. The board model and the agent operations work. It is not on npm
+> yet. The CLI, the MCP server, the exporters, the HTTP API, and the web UI are
+> not built yet.
 
 ## Install
 
@@ -34,6 +35,19 @@ board.addConnector({ from: { id: "a" }, to: { id: "b" }, text: "next" }, bot);
 board.list(); // every element, back to front
 ```
 
+Read the board as data, and draw a flowchart from text:
+
+```ts
+import { drawFlow, readBoard } from "agentic-canvas";
+
+drawFlow(board, "direction LR\nS(Start) -> D{Ok?}: go\nD -> E[Done]: yes", bot);
+readBoard(board); // { title, nodes, edges, groups, texts }
+```
+
+The flow text takes one statement per line: `A -> B: label`. Use `[text]` for a
+box, `(text)` for an ellipse, and `{text}` for a diamond. `direction LR` sets
+the direction. Lines that start with `#` or `//` are comments.
+
 ## Features
 
 - Shapes: rectangle, ellipse, diamond, text, sticky note, frame, image.
@@ -41,12 +55,19 @@ board.list(); // every element, back to front
 - Z-order, and groups that nest.
 - Every element keeps the kind of its author and of its last editor. An agent
   edit stays visible as machine-made.
+- `readBoard`: nodes, edges, groups, and text as plain data, with a machine-made
+  flag on each.
+- `drawFlow`: a flowchart from text with a layered layout. It adds nothing when
+  anything fails.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model runs in Node and in a Worker.
 
 ## Limits
 
-- A board holds at most 10,000 elements.
+- A board holds at most 10,000 elements. A flow holds at most 500 nodes and 2,000
+  edges.
+- Flow text has no chains (`A -> B -> C`). Write one edge per line.
+- `readBoard` leaves out embedded image bytes.
 - Images hold a `data:` PNG, JPEG, GIF, or WebP, or a `blob:` key. Remote URLs and
   SVG are refused.
 - Two peers that make the same explicit id at the same time keep only one element, with no

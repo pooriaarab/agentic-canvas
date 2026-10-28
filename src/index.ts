@@ -12,3 +12,7 @@ export type {
 } from "./core/board.js";
 export { PRINCIPAL_KINDS, isMachineMade, principalSchema } from "./core/principal.js";
 export type { Principal, PrincipalKind } from "./core/principal.js";
+export { MAX_FLOW_EDGES, MAX_FLOW_NODES, drawFlow, layoutFlow, parseFlow } from "./core/flow.js";
+export type { DrawOptions, FlowEdge, FlowGraph, FlowNode, Placement } from "./core/flow.js";
+export { readBoard } from "./core/read.js";
+export type { BoardData, EdgeData, NodeData } from "./core/read.js";

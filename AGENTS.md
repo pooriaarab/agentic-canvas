@@ -10,10 +10,17 @@ actor. The author kind never changes.
 
 ## Faces
 
-- SDK: `import { Board } from "agentic-canvas"`.
+- SDK: `import { Board, readBoard, drawFlow } from "agentic-canvas"`.
 - CLI and MCP: not built yet.
 
 Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
+
+## The loop
+
+1. Call `readBoard(board)` to see nodes, edges, and text.
+2. Change the board with `addShape`, `addConnector`, `update`, `move`, `remove`.
+3. Or call `drawFlow(board, "A -> B: label", actor)` to draw a flowchart.
+4. Read the board again to check the result.
 
 ## Rules
 

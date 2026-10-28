@@ -150,7 +150,7 @@ export class Board {
   readonly doc: Y.Doc;
   private readonly elements: Y.Map<Y.Map<unknown>>;
   private readonly meta: Y.Map<unknown>;
-  private readonly maxElements: number;
+  private maxElements: number;
 
   constructor(doc: Y.Doc = new Y.Doc(), options: { maxElements?: number } = {}) {
     this.maxElements = Math.min(options.maxElements ?? MAX_ELEMENTS, MAX_ELEMENTS);
@@ -174,6 +174,13 @@ export class Board {
 
   encode(): Uint8Array {
     return Y.encodeStateAsUpdate(this.doc);
+  }
+
+  /** An independent copy. Edits to it leave this board alone. */
+  clone(): Board {
+    const copy = Board.decode(this.encode());
+    copy.maxElements = this.maxElements;
+    return copy;
   }
 
   get title(): string {
