@@ -11,6 +11,10 @@
 //  8. Z-order: new on top; front and back; ties break by id.
 //  9. Sync: concurrent edits converge; encode and decode round-trip.
 // 10. Element cap.
+// 11. Concurrent delete vs connect or retarget leaves a connector with a missing
+//     end: readers hide it, repair removes it, both peers converge.
+// 12. A peer group delete leaves members with a missing group: repair clears it.
+// 13. A peer update past the element cap is refused on decode.
 import { describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { Board, CanvasError, MAX_ELEMENTS, type Shape } from "./board.js";
@@ -291,6 +295,88 @@ describe("sync", () => {
     expect(copy.list()).toEqual(board.list());
     expect(copy.title).toBe("Plan");
     expect(copy.titleBy).toEqual(agent);
+  });
+});
+
+describe("concurrent delete", () => {
+  function pair() {
+    const base = new Board();
+    base.addShape(rect(0, 0, { id: "s" }), human);
+    base.addShape(rect(200, 0, { id: "t" }), human);
+    return [Board.decode(base.encode()), Board.decode(base.encode())] as const;
+  }
+  const ids = (b: Board) => b.list().map((e) => e.id);
+  test("delete on one doc, connect on the other: no orphan connector is readable", () => {
+    const [a, b] = pair();
+    a.remove("s");
+    b.addConnector({ id: "k", from: { id: "s" }, to: { id: "t" } }, agent);
+    sync(a, b);
+    expect(ids(a)).toEqual(["t"]);
+    expect(ids(b)).toEqual(["t"]);
+    expect(a.get("k")).toBeUndefined();
+  });
+  test("delete vs retarget of an existing connector", () => {
+    const base = new Board();
+    for (const id of ["s", "t", "u"]) base.addShape(rect(0, 0, { id }), human);
+    base.addConnector({ id: "k", from: { id: "s" }, to: { id: "t" } }, human);
+    const a = Board.decode(base.encode());
+    const b = Board.decode(base.encode());
+    a.remove("u");
+    b.update("k", { to: { id: "u" } }, agent);
+    sync(a, b);
+    expect(ids(a)).toEqual(["s", "t"]);
+    expect(ids(b)).toEqual(["s", "t"]);
+  });
+  test("repair removes the orphan the same way on both docs", () => {
+    const [a, b] = pair();
+    a.remove("s");
+    b.addConnector({ id: "k", from: { id: "s" }, to: { id: "t" } }, agent);
+    sync(a, b);
+    expect(a.repair()).toEqual(["k"]);
+    expect(b.repair()).toEqual(["k"]);
+    sync(a, b);
+    expect(a.repair()).toEqual([]);
+    expect([...a.doc.getMap("elements").keys()].sort()).toEqual(["t"]);
+    expect([...b.doc.getMap("elements").keys()].sort()).toEqual(["t"]);
+  });
+  test("decode repairs a doc that holds an orphan", () => {
+    const [a, b] = pair();
+    a.remove("s");
+    b.addConnector({ id: "k", from: { id: "s" }, to: { id: "t" } }, agent);
+    sync(a, b);
+    const loaded = Board.decode(a.encode());
+    expect([...loaded.doc.getMap("elements").keys()]).toEqual(["t"]);
+  });
+  test("remove takes a hidden orphan bound to the shape and does not throw", () => {
+    const [a, b] = pair();
+    a.remove("s");
+    b.addConnector({ id: "k", from: { id: "s" }, to: { id: "t" } }, agent);
+    sync(a, b);
+    expect(a.remove("t")).toEqual(["k", "t"]);
+    expect(a.list()).toEqual([]);
+  });
+  test("a member whose group a peer deleted reads as ungrouped after repair", () => {
+    const base = new Board();
+    for (const id of ["a", "b"]) base.addShape(rect(0, 0, { id }), human);
+    base.group(["a", "b"], human, "g");
+    const x = Board.decode(base.encode());
+    const y = Board.decode(base.encode());
+    x.doc.getMap<Y.Map<unknown>>("elements").delete("g");
+    y.update("a", { text: "edit" }, agent);
+    sync(x, y);
+    expect(x.repair().sort()).toEqual(["a", "b"]);
+    expect(x.get("a")?.groupId).toBeUndefined();
+    expect(x.get("b")?.groupId).toBeUndefined();
+  });
+  test("decode refuses an update past the element cap", () => {
+    const doc = new Y.Doc();
+    const big = new Board(doc, { maxElements: MAX_ELEMENTS });
+    doc.transact(() => {
+      for (let i = 0; i <= MAX_ELEMENTS; i++) {
+        doc.getMap<Y.Map<unknown>>("elements").set(`s${i}`, new Y.Map(Object.entries({ id: `s${i}`, type: "rect", z: i, x: 0, y: 0, w: 1, h: 1, text: "", author: human, editedBy: human })));
+      }
+    });
+    expect(code(() => Board.decode(big.encode()))).toBe("LIMIT");
   });
 });
 

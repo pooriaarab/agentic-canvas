@@ -49,6 +49,12 @@ board.list(); // every element, back to front
 - A board holds at most 10,000 elements.
 - Images hold a `data:` PNG, JPEG, GIF, or WebP, or a `blob:` key. Remote URLs and
   SVG are refused.
+- Two peers that make the same explicit id at the same time keep only one element, with no
+  error. Explicit ids are safe with one writer. Leave `id` empty and the board picks a random one.
+- Delete against connect can leave a connector with a missing end. Readers hide it. `repair()`
+  removes it, and `Board.decode` runs `repair()` for you.
+- `move` writes absolute positions. Two peers that move one shape at the same time do not add up:
+  the last writer wins.
 - Frames are plain shapes. They do not own the shapes inside them yet.
 - Delete leaves no audit record yet. The caller logs it.
 

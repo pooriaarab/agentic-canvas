@@ -108,6 +108,7 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
   return result.data;
 }
 
+const isBindable = (type: unknown): boolean => typeof type === "string" && type !== "connector" && type !== "group";
 const hasId = (e: Endpoint): e is { id: string } => "id" in e;
 
 /** A whiteboard on a Yjs doc. Headless: no UI code. Every write names its actor. */
@@ -124,10 +125,14 @@ export class Board {
     this.meta = doc.getMap("meta");
   }
 
+  /** Load a saved board. Refuses a doc past the element cap, then repairs what concurrent writers left broken. */
   static decode(update: Uint8Array): Board {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, update);
-    return new Board(doc);
+    const board = new Board(doc);
+    if (board.elements.size > MAX_ELEMENTS) throw new CanvasError("LIMIT", `a board holds at most ${MAX_ELEMENTS} elements`);
+    board.repair();
+    return board;
   }
 
   encode(): Uint8Array {
@@ -151,14 +156,30 @@ export class Board {
     });
   }
 
+  /** One element. A connector with a missing bound end counts as detached and is hidden. */
   get(elementId: string): CanvasElement | undefined {
-    return this.elements.get(elementId)?.toJSON() as CanvasElement | undefined;
+    const el = this.elements.get(elementId)?.toJSON() as CanvasElement | undefined;
+    return el && !this.isDetached(el) ? el : undefined;
   }
 
-  /** All elements from back to front. */
+  /** All visible elements from back to front. */
   list(): CanvasElement[] {
-    const all = [...this.elements.values()].map((m) => m.toJSON() as CanvasElement);
-    return all.sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return this.rawList().filter((e) => !this.isDetached(e));
+  }
+
+  /**
+   * Delete what two writers can leave broken after a merge: connectors whose bound end is gone,
+   * and members that name a deleted group. Idempotent, so every peer may run it. Returns the ids fixed.
+   */
+  repair(): string[] {
+    const all = this.rawList();
+    const detached = all.filter((e) => this.isDetached(e)).map((e) => e.id);
+    const loose = all.filter((e) => e.groupId !== undefined && this.typeOf(e.groupId) !== "group").map((e) => e.id);
+    this.doc.transact(() => {
+      detached.forEach((d) => this.elements.delete(d));
+      loose.forEach((l) => this.elements.get(l)?.delete("groupId"));
+    });
+    return [...new Set([...detached, ...loose])].sort();
   }
 
   addShape(input: unknown, actor: Principal): Shape {
@@ -196,7 +217,8 @@ export class Board {
     const free = (e: Endpoint): Endpoint => (hasId(e) ? e : { x: e.x + mx, y: e.y + my });
     const plan: [string, Record<string, unknown>][] = [];
     for (const memberId of this.subtree(elementId)) {
-      const el = this.get(memberId)!;
+      const el = this.get(memberId);
+      if (!el) continue;
       if (el.type === "connector") {
         const patch = parse(connectorPatch, { from: free(el.from), to: free(el.to) });
         if (!hasId(el.from) || !hasId(el.to)) plan.push([memberId, patch]);
@@ -212,7 +234,7 @@ export class Board {
   remove(elementId: string): string[] {
     this.require(elementId);
     const doomed = new Set(this.subtree(elementId));
-    for (const el of this.list()) {
+    for (const el of this.rawList()) {
       if (el.type === "connector" && [el.from, el.to].some((e) => hasId(e) && doomed.has(e.id))) doomed.add(el.id);
     }
     this.doc.transact(() => doomed.forEach((d) => this.elements.delete(d)));
@@ -253,6 +275,20 @@ export class Board {
     this.write(members.map((m, i) => [m.id, { z: start + i }]), by);
   }
 
+  private rawList(): CanvasElement[] {
+    const all = [...this.elements.values()].map((m) => m.toJSON() as CanvasElement);
+    return all.sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  private typeOf(elementId: string): unknown {
+    return this.elements.get(elementId)?.get("type");
+  }
+
+  private isDetached(el: CanvasElement): boolean {
+    if (el.type !== "connector") return false;
+    return [el.from, el.to].some((e) => hasId(e) && !isBindable(this.typeOf(e.id)));
+  }
+
   private require(elementId: string): CanvasElement {
     const el = this.get(elementId);
     if (!el) throw new CanvasError("NOT_FOUND", `no element "${elementId}"`);
@@ -261,8 +297,7 @@ export class Board {
 
   private checkEnd(end: Endpoint | undefined): void {
     if (!end || !hasId(end)) return;
-    const target = this.get(end.id);
-    if (!target || target.type === "connector" || target.type === "group") {
+    if (!isBindable(this.typeOf(end.id))) {
       throw new CanvasError("BAD_REFERENCE", `"${end.id}" is not a shape a connector can bind to`);
     }
   }
