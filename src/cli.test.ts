@@ -13,10 +13,17 @@
 //  6. Bad flow text: exit 1, and the board is unchanged.
 //  7. A damaged stored file: exit 1, no stack trace.
 //  8. Eight processes add at the same time: all eight shapes stay.
-//  9. Round trip through new, add, connect, flow, move, rm, read.
-// 10. Agent work reads back as machine-made.
+//  9. Round trip through new, add, connect, flow, move, rm, read, export.
+// 10. The same board exports to the same bytes twice. The run saves the SVG
+//     and a hash as an artifact under artifacts/.
+// 11. Agent work reads back as machine-made.
+// 12. PNG: a real PNG with the size of the SVG. Hostile text still gives an SVG
+//     that a browser parses as XML. Drawing makes no network request.
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -64,6 +71,8 @@ describe("usage errors", () => {
     ["unknown flag", ["read", "b", "--nope"]],
     ["too few arguments", ["connect", "b", "a"]],
     ["too many arguments", ["read", "a", "b"]],
+    ["unknown export format", ["export", "b", "--format", "gif"]],
+    ["png without --out", ["export", "b", "--format", "png"]],
     ["flow with both text and file", ["flow", "b", "--text", "A -> B", "--file", "x"]],
   ])("%s exits 2 with nothing on stdout", async (_name, args) => {
     const r = await cli(fresh(), args, agent);
@@ -182,7 +191,7 @@ describe("concurrency", () => {
 });
 
 describe("round trip", () => {
-  test("new, add, connect, flow, move, rm, read", async () => {
+  test("new, add, connect, flow, move, rm, read, export", async () => {
     const dir = fresh();
     expect(json(await cli(dir, ["new", "--id", "b", "--title", "Plan"], human))).toEqual({ id: "b", title: "Plan" });
     await cli(dir, ["add", "b", "--type", "sticky", "--x", "0", "--y", "0", "--text", "Idea", "--id", "idea"], human);
@@ -201,4 +210,101 @@ describe("round trip", () => {
     expect(read.edges).toHaveLength(2);
     expect(read.texts).toContain("leads to");
   });
+
+  test("exports the same SVG twice and saves it as an artifact", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b", "--title", "Release flow"], human);
+    await cli(dir, ["flow", "b", "--text", "direction LR\nCode(Write code) -> Test{Tests pass?}: push\nTest -> Ship[Ship it]: yes\nTest -> Code: no"], agent);
+    const first = await cli(dir, ["export", "b"]);
+    const second = await cli(dir, ["export", "b"]);
+    expect(first.code).toBe(0);
+    expect(first.out).toBe(second.out);
+    expect(first.out).toMatch(/^<svg /);
+    expect(first.out).toContain('data-machine-made="true"');
+    mkdirSync(join(process.cwd(), "artifacts"), { recursive: true });
+    writeFileSync(join(process.cwd(), "artifacts", "release-flow.svg"), first.out);
+    const hash = createHash("sha256").update(first.out).digest("hex");
+    writeFileSync(join(process.cwd(), "artifacts", "release-flow.sha256"), `${hash}  release-flow.svg\n`);
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("png", () => {
+  test("writes a PNG with the size of the SVG, and hostile text stays well-formed", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b"], human);
+    await cli(dir, ["add", "b", "--type", "rect", "--x", "0", "--y", "0", "--text", '<script>alert(1)</script> & "x" \u0007 😀'], agent);
+    await cli(dir, ["flow", "b", "--text", "A -> B: go"], agent);
+    const svg = (await cli(dir, ["export", "b"])).out;
+    const [, w, h] = /width="(\d+)" height="(\d+)"/.exec(svg)!.map(Number);
+    const file = join(root, "board.png");
+    const r = await cli(dir, ["export", "b", "--format", "png", "--out", file]);
+    expect(r.code).toBe(0);
+    const png = readFileSync(file);
+    expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([w, h]);
+    const { chromium } = await import("playwright-core");
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      const parsed = await page.evaluate((s) => {
+        const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+        return { error: doc.querySelector("parsererror")?.textContent ?? null, scripts: doc.querySelectorAll("script").length };
+      }, svg);
+      expect(parsed).toEqual({ error: null, scripts: 0 });
+    } finally {
+      await browser.close();
+    }
+    mkdirSync(join(process.cwd(), "artifacts"), { recursive: true });
+    writeFileSync(join(process.cwd(), "artifacts", "board.png"), png);
+  }, 60_000);
+});
+
+describe("png network", () => {
+  test("drawing a PNG makes no network request", async () => {
+    let hits = 0;
+    const server = createServer((_req, res) => {
+      hits++;
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/a.png`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><image href="${url}" width="50" height="50"/></svg>`;
+    try {
+      const { svgToPng } = await import("./png.js");
+      await svgToPng(svg);
+    } finally {
+      server.close();
+    }
+    expect(hits).toBe(0);
+  }, 60_000);
+});
+
+describe("png limits", () => {
+  test("refuses a board past the pixel cap before it starts a browser", async () => {
+    const { svgToPng } = await import("./png.js");
+    const big = '<svg xmlns="http://www.w3.org/2000/svg" width="4001" height="4001"></svg>';
+    await expect(svgToPng(big)).rejects.toMatchObject({ code: "LIMIT" });
+  });
+  test("a script in the SVG does not run", async () => {
+    let hits = 0;
+    const server = createServer((_req, res) => {
+      hits++;
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/x`;
+    const frame = (script: string) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect id="r" width="60" height="60" fill="#00aa00"/>${script}</svg>`;
+    const attack = `<script>document.getElementById("r").setAttribute("fill","#ff0000");fetch("${url}");new WebSocket("ws://127.0.0.1:1/");</script>`;
+    try {
+      const { svgToPng } = await import("./png.js");
+      const clean = await svgToPng(frame(""));
+      const hostile = await svgToPng(frame(attack));
+      expect(Buffer.from(hostile).equals(Buffer.from(clean))).toBe(true);
+    } finally {
+      server.close();
+    }
+    expect(hits).toBe(0);
+  }, 60_000);
 });

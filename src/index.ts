@@ -16,6 +16,8 @@ export { MAX_FLOW_EDGES, MAX_FLOW_NODES, drawFlow, layoutFlow, parseFlow } from 
 export type { DrawOptions, FlowEdge, FlowGraph, FlowNode, Placement } from "./core/flow.js";
 export { readBoard } from "./core/read.js";
 export type { BoardData, EdgeData, NodeData } from "./core/read.js";
+export { toSvg } from "./core/svg.js";
+export { svgToPng } from "./png.js";
 export { CanvasService } from "./service.js";
 export { fileStore } from "./store.js";
 export type { BoardStore, Doc, Json, StoreOps } from "./store.js";

@@ -2,6 +2,8 @@ import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
 import type { Principal } from "./core/principal.js";
 import { readBoard, type BoardData } from "./core/read.js";
+import { toSvg } from "./core/svg.js";
+import { svgToPng } from "./png.js";
 import { fromBase64, toBase64, type BoardStore } from "./store.js";
 
 const COLLECTION = "boards";
@@ -55,6 +57,14 @@ export class CanvasService {
 
   flow(id: string, text: string, actor: Principal, options?: DrawOptions) {
     return this.change(id, (b) => drawFlow(b, text, actor, options));
+  }
+
+  async exportSvg(id: string): Promise<string> {
+    return this.store.transaction(async (tx) => toSvg(await this.load(tx.get(COLLECTION, id), id)));
+  }
+
+  async exportPng(id: string): Promise<Uint8Array> {
+    return svgToPng(await this.exportSvg(id));
   }
 
   private async load(read: Promise<{ update?: unknown } | null>, id: string): Promise<Board> {

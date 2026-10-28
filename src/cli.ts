@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { BRAND } from "./brand.js";
 import { CanvasError } from "./core/board.js";
@@ -22,6 +22,7 @@ Commands:
   move <board> <element> --dx <n> --dy <n> Move an element or a group.
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
+  export <board> [--format svg|png] [--out <path>]  Print SVG, or write PNG to --out.
 
 Write commands need an actor in CANVAS_ACTOR as <kind>:<id>, such as "agent:helper".
 The operator sets it. A caller cannot pick its own kind: there is no --actor flag.
@@ -33,7 +34,7 @@ const flags = {
   type: { type: "string" }, x: { type: "string" }, y: { type: "string" }, w: { type: "string" }, h: { type: "string" },
   text: { type: "string" }, fill: { type: "string" }, stroke: { type: "string" }, src: { type: "string" },
   dx: { type: "string" }, dy: { type: "string" }, file: { type: "string" }, prefix: { type: "string" },
-  help: { type: "boolean" }, version: { type: "boolean" },
+  format: { type: "string" }, out: { type: "string" }, help: { type: "boolean" }, version: { type: "boolean" },
 } as const;
 
 // A blank or non-numeric flag becomes NaN, so the model refuses it with a clear error.
@@ -92,6 +93,16 @@ async function run(argv: string[]): Promise<void> {
       if ((v.text === undefined) === (v.file === undefined)) throw new UsageError("flow needs exactly one of --text and --file");
       const text = v.text ?? readFileSync(v.file === "-" ? 0 : v.file!, "utf8");
       return print(await service.flow(board, text, actor(), { idPrefix: v.prefix }));
+    }
+    case "export": {
+      need(1, "<board> [--format svg|png] [--out <path>]");
+      const format = v.format ?? "svg";
+      if (format !== "svg" && format !== "png") throw new UsageError(`format must be svg or png, got "${format}"`);
+      if (format === "png" && !v.out) throw new UsageError("png is binary: pass --out <path>");
+      const data = format === "svg" ? await service.exportSvg(board) : await service.exportPng(board);
+      if (!v.out) return void process.stdout.write(`${data}\n`);
+      writeFileSync(v.out, data);
+      return print({ out: v.out, format, bytes: data.length });
     }
     default:
       throw new UsageError(`unknown command "${command}"`);
