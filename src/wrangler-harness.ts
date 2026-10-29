@@ -24,12 +24,21 @@ export async function startWorker(options: { port: number; persistTo: string; va
   });
   let log = "";
   for (const stream of [server.stdout, server.stderr]) stream?.on("data", (chunk: Buffer) => (log = (log + chunk.toString()).slice(-2000)));
-  const exited = new Promise<void>((resolve) => server.once("exit", () => resolve()));
+  let exitCode: number | null | undefined;
+  const exited = new Promise<void>((resolve) => server.once("exit", (code) => ((exitCode = code), resolve())));
   // A Worker that is still running holds its port, and the next one would answer from the old process.
   const stop = async () => {
     const gone = (ms: number) => Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms))]);
     // Wrangler starts workerd and esbuild. A signal to the whole group stops them too.
-    const signal = (name: NodeJS.Signals) => (server.pid === undefined ? server.kill(name) : process.kill(-server.pid, name));
+    // A process that already exited is gone, which is what stop wants: ESRCH is not an error.
+    const signal = (name: NodeJS.Signals) => {
+      try {
+        if (server.pid === undefined) server.kill(name);
+        else process.kill(-server.pid, name);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    };
     signal("SIGTERM");
     if (await gone(10_000)) return;
     signal("SIGKILL");
@@ -41,6 +50,7 @@ export async function startWorker(options: { port: number; persistTo: string; va
       await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(5000) });
       return { log: () => log, url: `http://127.0.0.1:${port}/api/v1/canvas`, stop };
     } catch {
+      if (exitCode !== undefined) throw new Error(`wrangler dev exited with code ${exitCode} before it started. Last output: ${log}`);
       if (Date.now() > deadline) {
         await stop();
         throw new Error(`wrangler dev did not start in time. Last output: ${log}`);
