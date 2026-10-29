@@ -34,6 +34,7 @@ describe("owner repair actor", () => {
 //  2. A changed author, a forged editor, or a content change that keeps an old stamp.
 //  3. Data no check reads: an unknown element key, a meta key, a root type, a title that fails its check,
 //     and an update that lacks its earlier part. Each would grow the stored board.
+//  A save must also refuse a stored board over the byte cap: Yjs keeps the keys of deleted entries.
 //  And it must keep an honest edit, merge with an HTTP write made meanwhile, and answer garbage with INVALID.
 describe("live checkpoint", () => {
   const bot: Principal = { kind: "agent_of_human", id: "helper" };
@@ -166,6 +167,20 @@ describe("live checkpoint", () => {
     expect(result.fixed).toEqual(["s1", "title"]);
     expect((await service.read("b")).nodes).toEqual([]);
     expect((await service.state("b")).length).toBeLessThan(before + 500);
+  });
+
+  test("set-and-delete updates cannot grow the stored board past the cap", async () => {
+    const service = await open();
+    const before = (await service.state("b")).length;
+    const update = await room(service, (b) => {
+      const meta = b.doc.getMap("meta");
+      for (let i = 0; i < 1000; i++) {
+        meta.set(`${"k".repeat(2000)}${i}`, 1);
+        meta.delete(`${"k".repeat(2000)}${i}`);
+      }
+    });
+    await expect(service.checkpoint("b", update, bot, [bot])).rejects.toMatchObject({ code: "LIMIT" });
+    expect((await service.state("b")).length).toBe(before);
   });
 
   test("an update that lacks its earlier part is refused and the board does not grow", async () => {

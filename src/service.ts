@@ -8,6 +8,8 @@ import { toSvg } from "./core/svg.js";
 import { FileStoreError } from "./store-errors.js";
 
 const COLLECTION = "boards";
+/** The most a stored board may hold after a save. A room holds 1.5 MB at most, and Yjs keeps the keys of deleted entries. */
+export const MAX_LIVE_BYTES = 1_572_864;
 const BOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function toBase64(bytes: Uint8Array): string {
@@ -138,7 +140,9 @@ export class CanvasService {
       const strange = [...next.doc.share.keys()].filter((key) => key !== "elements" && key !== "meta");
       if (strange.length > 0) throw new CanvasError("INVALID", "the update holds data that is not part of a board");
       const fixed = new Set([...next.restamp(prior, trusted), ...next.repair()]);
-      await tx.put(COLLECTION, id, { update: toBase64(next.encode()) });
+      const saved = next.encode();
+      if (saved.length > MAX_LIVE_BYTES) throw new CanvasError("LIMIT", `the board would hold over ${MAX_LIVE_BYTES} bytes`);
+      await tx.put(COLLECTION, id, { update: toBase64(saved) });
       return { elements: next.list().length, fixed: [...fixed].sort() };
     });
   }
