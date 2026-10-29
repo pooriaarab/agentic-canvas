@@ -229,6 +229,74 @@ at the same time keep the last write. The board list shows the first 100 boards.
 - Yjs underneath: two copies of a board merge without conflicts.
 - The board model has no UI code. It is plain TypeScript on Yjs, with no outbound calls.
 
+## Exports
+
+Every name that each entry point exports is listed here. A name marked (type) exists only at compile time.
+
+### `agentic-canvas`
+
+| Name | What it is |
+|---|---|
+| `VERSION`, `BRAND` | The package version. `BRAND` holds the command name, the description and the version that the CLI and the MCP server show. |
+| `Board`, `CanvasElement` (type), `Shape` (type), `Connector` (type), `Group` (type), `Endpoint` (type), `ShapeType` (type) | The board model. `Board` holds the elements. Each element records its `author`, which never changes, and its `editedBy`. |
+| `SHAPE_TYPES` | The shape kinds: `rect`, `ellipse`, `diamond`, `text`, `sticky`, `frame` and `image`. |
+| `MAX_ELEMENTS`, `MAX_TEXT` | The limits: 10,000 elements on a board, and 10,000 UTF-16 code units in one text. |
+| `CanvasError`, `ErrorCode` (type) | The error that the board throws, with a `code` such as `INVALID`, `NOT_FOUND` or `LIMIT`. |
+| `parseFlow(source)`, `layoutFlow(graph)`, `drawFlow(board, source, actor, options?)` | `parseFlow` reads the flow text. `layoutFlow` returns placements with the top-left at (0, 0). `drawFlow` draws the flow onto the board as the actor. |
+| `MAX_FLOW_NODES`, `MAX_FLOW_EDGES` | The flow limits: 500 nodes and 2000 edges. |
+| `FlowGraph` (type), `FlowNode` (type), `FlowEdge` (type), `Placement` (type), `DrawOptions` (type) | Types for a flow and its layout. |
+| `readBoard`, `BoardData` (type), `NodeData` (type), `EdgeData` (type) | Read a board as plain data. |
+| `toSvg(board)`, `svgToPng(svg)` | `toSvg` returns the board as SVG. `svgToPng` turns an SVG string into PNG through Chromium. |
+| `PRINCIPAL_KINDS`, `PrincipalKind` (type), `Principal` (type), `principalSchema`, `isMachineMade` | The principal kinds, the schema of a principal, and the rule that marks machine-made kinds. |
+| `operatorActor(env?)`, `ActorConfigError` | Read the actor from `CANVAS_ACTOR` as `<kind>:<id>`. It throws `ActorConfigError` when the value is missing or bad. |
+| `CanvasService` | The board operations that the CLI, the MCP server and the Worker share. It takes a `Store`. |
+| `createMcpServer(service, actor)`, `runMcp(service, actor)` | Make the MCP server, or run it on stdio. |
+| `createFileStore`, `openLocalStore`, `FileStoreOptions` (type) | Stores on one local file. See `agentic-canvas/file-store`. |
+
+### `agentic-canvas/client`
+
+| Name | What it is |
+|---|---|
+| `createClient(options)`, `CanvasApiError` | The remote client. See Remote client above. |
+| `ClientOptions` (type), `CallOptions` (type), `CanvasClient` (type), `ShapeInput` (type), `ConnectorInput` (type), `ShapePatch` (type), `ConnectorPatch` (type), `ImageInfo` (type), `ApiErrorCode` (type) | Types for the client. `ApiErrorCode` adds the client's own codes, such as `NETWORK`, to `ErrorCode`. |
+
+### `agentic-canvas/file-store`
+
+| Name | What it is |
+|---|---|
+| `createFileStore(path, options?)`, `openLocalStore(dir)` | A store on one JSON file, or on `canvas.json` in a directory. |
+| `FileStoreError` | The error that the store throws. Its `code` is `LOCKED` or `DAMAGED`. |
+| `FileStoreOptions` (type) | `lockTimeoutMs` (default 10000) and `staleAfterMs` (default 30000), plus the adapter options. |
+| `STORE_FILE` | The file name that `openLocalStore` uses, `canvas.json`. |
+
+### `agentic-canvas/live`
+
+| Name | What it is |
+|---|---|
+| `LiveBoard.join(options)` | Join one board's live room. Read the board, change it, `save` to the stored board, then `leave`. |
+| `LiveService` | The CLI and MCP commands, run in a live room. A change joins the room, runs as the token's actor, saves, and leaves. `read` and `exportSvg` join and leave without a save. `create` and `list` call the HTTP API. |
+| `whoAmI(server, token)`, `Me` (type) | Ask the Worker who a token is. It returns the actor and the role. |
+| `LiveOptions` (type) | The server, the board id, the token, and the optional name and reconnect settings. |
+
+### `agentic-canvas/worker`
+
+| Name | What it is |
+|---|---|
+| `createApp(options?)` | Make the Hono app for the Worker. Pass `live` to turn on the live-room socket. |
+| `default` | The Worker, without live rooms. |
+| `authenticate(request, env)` | Read a bearer token from the `Authorization` header, or from a WebSocket sub-protocol. Return the actor and the role, or `null`. |
+| `sniffImage(bytes)` | Find the image type from the first bytes, or return `null`. The client's claim of a type is not trusted. |
+| `WS_PROTOCOL` | The sub-protocol name that carries a token on a WebSocket: `agentic-canvas.bearer`. |
+| `WorkerEnv` (type), `AppOptions` (type), `Role` (type) | Types for the Worker bindings, the app options and the role, `editor` or `viewer`. |
+
+### `agentic-canvas/live-worker`
+
+| Name | What it is |
+|---|---|
+| `default` | The Worker with live rooms. Bind the `SyncRoom` class as `SYNC_ROOM`. |
+| `SyncRoom` | The Durable Object class of the live rooms, re-exported from `agentic-realtime/worker`. |
+| `LiveEnv` (type) | The Worker bindings, plus `SYNC_ROOM`. |
+
 ## Limits
 
 - Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.5.
