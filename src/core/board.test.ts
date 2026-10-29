@@ -177,12 +177,15 @@ describe("groups", () => {
     board.group(["a", "b"], human);
     expect(code(() => board.group(["a", "c"], human))).toBe("BAD_REFERENCE");
   });
-  test.each(["bad id!", "x".repeat(65)])("refuses the group id %s and writes nothing", (groupId) => {
+  test.each(["", "bad id!", "x".repeat(65)])("refuses the group id %j and writes nothing", (groupId) => {
     const board = setup();
-    const before = board.list().map((e) => e.id);
+    const before = board.encode();
     expect(code(() => board.group(["a", "b"], human, groupId))).toBe("INVALID");
-    expect(board.list().map((e) => e.id)).toEqual(before);
-    expect(board.get("a")?.groupId).toBeUndefined();
+    expect(board.encode()).toEqual(before);
+  });
+  test("accepts a group id of exactly 64 characters", () => {
+    const board = setup();
+    expect(board.group(["a", "b"], human, "x".repeat(64)).id).toBe("x".repeat(64));
   });
   test("nests, and ungroup hands members back to the parent group", () => {
     const board = setup();
