@@ -5,7 +5,7 @@ import { BRAND } from "./brand.js";
 import { CanvasError, SHAPE_TYPES } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
 import { svgToPng } from "./png.js";
-import type { CanvasService } from "./service.js";
+import type { BoardAccess } from "./service.js";
 
 const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
 
@@ -33,7 +33,7 @@ const num = z.number();
  * The tools mirror the CLI. The actor is fixed here by the operator. No tool takes an actor,
  * author, or kind, so a caller cannot choose who it writes as.
  */
-export function createMcpServer(service: CanvasService, actor: Principal): McpServer {
+export function createMcpServer(service: BoardAccess, actor: Principal): McpServer {
   const server = new McpServer({ name: BRAND.command, version: BRAND.version });
   const read = { readOnlyHint: true };
 
@@ -104,6 +104,6 @@ export function createMcpServer(service: CanvasService, actor: Principal): McpSe
 }
 
 /** Serve the tools on stdin and stdout. Stdout carries protocol frames only. */
-export async function runMcp(service: CanvasService, actor: Principal): Promise<void> {
+export async function runMcp(service: BoardAccess, actor: Principal): Promise<void> {
   await createMcpServer(service, actor).connect(new StdioServerTransport());
 }

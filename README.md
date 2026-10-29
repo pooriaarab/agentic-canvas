@@ -108,6 +108,14 @@ the direction. Lines that start with `#` or `//` are comments.
   `/connectors`, `/flow`, `/move`, `DELETE /boards/:id/elements/:element`, `POST /images`,
   `GET /images/:id`. An image is stored under the SHA-256 of its bytes, and the reply gives
   the `blob:` ref for a shape. A busy database or bucket answers 503: try again.
+- Live rooms (`agentic-canvas/live-worker`, on `agentic-realtime`). One Durable Object holds one
+  board. A token may carry `"role": "viewer"`: a viewer reads and cannot write. `GET /boards/:id/ws`
+  opens a room, `GET /me` says who a token is, `GET /boards/:id/state` and
+  `POST /boards/:id/checkpoint` seed a room from the stored board and save it back, as a merge. A save
+  checks author stamps: a client cannot put another author on its work.
+- The SDK joins a room: `import { LiveBoard, LiveService } from "agentic-canvas/live"`. The CLI and the MCP
+  server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
+  `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model is plain TypeScript on Yjs, with no outbound calls.
 
@@ -140,7 +148,10 @@ the direction. Lines that start with `#` or `//` are comments.
 - Node 22 or newer is needed. `agentic-canvas/file-store` exports `createFileStore(path)` and
   `openLocalStore(dir)`. A writer that is paused for more than 30 seconds can lose its lock
   and then still write.
-- Every Worker token reaches every board. There are no roles or sharing yet. Local
+- A room remembers its authors for good, so a client can stamp an element with the name of anyone who
+  once sent an update in that room. A save corrects the stored board and not the room: after a save that
+  reports `fixed`, join again. A client that adds a root Yjs type of its own blocks later saves of that room.
+- Every Worker token reaches every board. A token has an editor or viewer role, and nothing finer yet. Local
   `wrangler dev` cannot confirm a region, so run it with `CANVAS_REGION=unknown`. The region claim covers D1 only: R2 reports no region, so the bucket is in
   the EU jurisdiction only if you create it so. A real D1
   confirms `eu` or `us` on each query. The Worker has no PNG export.
