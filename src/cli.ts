@@ -6,6 +6,7 @@ import { CanvasError } from "./core/board.js";
 import { ActorConfigError, operatorActor } from "./actor.js";
 import type { Principal } from "./core/principal.js";
 import { runMcp } from "./mcp.js";
+import { svgToPng } from "./png.js";
 import { CanvasService } from "./service.js";
 import { openLocalStore } from "./store-file.js";
 
@@ -104,7 +105,7 @@ async function run(argv: string[]): Promise<void> {
       const format = v.format ?? "svg";
       if (format !== "svg" && format !== "png") throw new UsageError(`format must be svg or png, got "${format}"`);
       if (format === "png" && !v.out) throw new UsageError("png is binary: pass --out <path>");
-      const data = format === "svg" ? await service.exportSvg(board) : await service.exportPng(board);
+      const data = format === "svg" ? await service.exportSvg(board) : await svgToPng(await service.exportSvg(board));
       if (!v.out) return void process.stdout.write(`${data}\n`);
       writeFileSync(v.out, data);
       return print({ out: v.out, format, bytes: data.length });

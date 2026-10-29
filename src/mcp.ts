@@ -4,6 +4,7 @@ import { z } from "zod";
 import { BRAND } from "./brand.js";
 import { CanvasError, SHAPE_TYPES } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
+import { svgToPng } from "./png.js";
 import type { CanvasService } from "./service.js";
 
 const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
@@ -97,7 +98,7 @@ export function createMcpServer(service: CanvasService, actor: Principal): McpSe
   server.registerTool(
     "export_png",
     { description: "Export the board as a PNG image. Needs the optional playwright-core and a Chromium.", inputSchema: { board }, annotations: read },
-    tool(async (a) => ({ content: [{ type: "image" as const, data: Buffer.from(await service.exportPng(a.board)).toString("base64"), mimeType: "image/png" }] })),
+    tool(async (a) => ({ content: [{ type: "image" as const, data: Buffer.from(await svgToPng(await service.exportSvg(a.board))).toString("base64"), mimeType: "image/png" }] })),
   );
   return server;
 }

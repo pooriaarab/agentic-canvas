@@ -1,10 +1,19 @@
 {
-  // Sample worker config. Rename agentic-canvas on clone, then run
-  // wrangler deploy from the pack root.
+  // Worker for the /api/v1/canvas HTTP API. Boards live in D1 and images in R2, so both survive
+  // restarts and every Worker instance sees the same data.
+  // Create the database in the EU, then put its id below:
+  //   wrangler d1 create agentic-canvas --location weur
+  // Create the bucket in the EU jurisdiction:
+  //   wrangler r2 bucket create agentic-canvas-images --jurisdiction eu
+  // Local `wrangler dev` keeps its own copy and ignores the id.
+  // Set CANVAS_API_TOKENS with `wrangler secret put CANVAS_API_TOKENS`. Without it, every request gets 401.
+  // Set CANVAS_REGION ("eu" or "us") for each deploy, for example with --var. It is the region the
+  // database and the bucket live in. A real D1 confirms it on each query. Local `wrangler dev` needs "unknown". No default is set here.
   "name": "agentic-canvas",
   "main": "src/worker.ts",
   "compatibility_date": "2026-01-01",
-  "vars": {
-    "PACK_NAME": "agentic-canvas"
-  }
+  // The root of agentic-identity imports node:module for its version string.
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [{ "binding": "DB", "database_name": "agentic-canvas", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "agentic-canvas-images", "jurisdiction": "eu" }]
 }

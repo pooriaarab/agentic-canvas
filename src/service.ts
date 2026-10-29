@@ -4,7 +4,6 @@ import { drawFlow, type DrawOptions } from "./core/flow.js";
 import { principalSchema, type Principal } from "./core/principal.js";
 import { readBoard, type BoardData } from "./core/read.js";
 import { toSvg } from "./core/svg.js";
-import { svgToPng } from "./png.js";
 import { FileStoreError } from "./store-errors.js";
 
 const COLLECTION = "boards";
@@ -94,10 +93,6 @@ export class CanvasService {
   async exportSvg(id: string): Promise<string> {
     boardKey(id);
     return this.store.transaction(async (tx) => toSvg(await this.load(tx.get(COLLECTION, id), id)));
-  }
-
-  async exportPng(id: string): Promise<Uint8Array> {
-    return svgToPng(await this.exportSvg(id));
   }
 
   /** Owner only. Repair a board and delete the named elements. Only a human actor may call it. */
