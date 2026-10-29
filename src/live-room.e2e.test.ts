@@ -207,4 +207,19 @@ describe("live room", () => {
     await expect(enter("b4", HUMAN)).rejects.toThrow();
     expect((await call("/boards/b4", HUMAN)).status).toBe(200);
   }, 120_000);
+  test("a deleted board loses its room: a new board of the same id starts empty", async () => {
+    worker = await startWorker({ port: PORT + 4, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b5" }) });
+    const ada = await enter("b5", HUMAN);
+    new Board(ada.doc).addShape({ id: "live1", type: "rect", x: 0, y: 0 }, { kind: "human", id: "ada" });
+    await ada.flush();
+    // A viewer cannot delete. A missing board is a 404.
+    expect((await call("/boards/b5", VIEWER, { method: "DELETE" })).status).toBe(403);
+    expect((await call("/boards/nope", HUMAN, { method: "DELETE" })).status).toBe(404);
+    expect(await (await call("/boards/b5", BOT, { method: "DELETE" })).json()).toEqual({ deleted: "b5" });
+    expect((await call("/boards/b5", HUMAN)).status).toBe(404);
+    expect((await call("/boards/b5", HUMAN, { method: "DELETE" })).status).toBe(404);
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b5" }) });
+    expect((await (await call("/boards/b5", HUMAN)).json()).nodes).toEqual([]);
+  }, 120_000);
 });

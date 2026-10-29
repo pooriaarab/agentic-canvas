@@ -266,6 +266,16 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json(await c.var.service.create(c.var.actor, { id, title }), 201);
   });
   api.get("/boards/:id", async (c) => c.json(await c.var.service.read(c.req.param("id"))));
+  // The room is saved first (see `sync`), so the stored copy is current. Then the room is erased, then the board.
+  // If the erase fails, the board stays: a room that outlived its board would refill a new board of the same id.
+  api.delete("/boards/:id", async (c) => {
+    const id = c.req.param("id");
+    await c.var.service.assertExists(id);
+    if (options.live) await options.live(c.env).erase(id);
+    const deleted = await c.var.service.delete(id);
+    console.log(JSON.stringify({ level: "info", op: "delete-board", actorKind: c.var.actor.kind }));
+    return c.json(deleted);
+  });
   api.get("/boards/:id/svg", async (c) =>
     new Response(await c.var.service.exportSvg(c.req.param("id")), { headers: { "content-type": "image/svg+xml", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:" } }));
   api.post("/boards/:id/shapes", async (c) => c.json(await c.var.service.add(c.req.param("id"), await jsonBody(c), c.var.actor), 201));

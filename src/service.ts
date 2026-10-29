@@ -73,6 +73,16 @@ export class CanvasService {
     });
   }
 
+  /** Delete a board and everything on it. Throws NOT_FOUND unless the board exists. The Worker erases the live room too. */
+  async delete(id: string): Promise<{ deleted: string }> {
+    boardKey(id);
+    return this.store.transaction(async (tx) => {
+      if (!(await tx.get(COLLECTION, id))) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
+      await tx.delete(COLLECTION, id);
+      return { deleted: id };
+    });
+  }
+
   /** Throws NOT_FOUND unless the board exists. A live room opens only for a board that exists. */
   async assertExists(id: string): Promise<void> {
     boardKey(id);
@@ -219,4 +229,4 @@ function decodeStored(doc: { update?: unknown }, id: string, decode: (bytes: Uin
 }
 
 /** What the CLI and the MCP server need. `CanvasService` runs it on a store, and `LiveService` runs it in a live room. */
-export type BoardAccess = Pick<CanvasService, "create" | "list" | "read" | "update" | "add" | "connect" | "move" | "remove" | "flow" | "exportSvg">;
+export type BoardAccess = Pick<CanvasService, "create" | "list" | "read" | "delete" | "update" | "add" | "connect" | "move" | "remove" | "flow" | "exportSvg">;

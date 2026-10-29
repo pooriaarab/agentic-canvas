@@ -78,6 +78,8 @@ export interface CanvasClient {
   listBoards(options?: CallOptions): Promise<{ boards: { id: string; title: string }[] }>;
   createBoard(input?: { id?: string; title?: string }, options?: CallOptions): Promise<{ id: string; title: string }>;
   readBoard(id: string, options?: CallOptions): Promise<BoardData & { id: string }>;
+  /** Delete a board for good, with its live room. Returns the id. */
+  deleteBoard(id: string, options?: CallOptions): Promise<{ deleted: string }>;
   /** The board as an SVG document. */
   exportSvg(id: string, options?: CallOptions): Promise<string>;
   addShape(id: string, shape: ShapeInput, options?: CallOptions): Promise<Shape>;
@@ -156,6 +158,7 @@ export function createClient(options: ClientOptions): CanvasClient {
     listBoards: (o) => json("GET", "/boards", undefined, o),
     createBoard: (input = {}, o) => json("POST", "/boards", input, o),
     readBoard: (id, o) => json("GET", `/boards/${seg(id)}`, undefined, o),
+    deleteBoard: (id, o) => json("DELETE", `/boards/${seg(id)}`, undefined, o),
     exportSvg: async (id, o) => (await send("GET", `/boards/${seg(id)}/svg`, {}, o)).text(),
     addShape: (id, shape, o) => json("POST", `/boards/${seg(id)}/shapes`, shape, o),
     addConnector: (id, connector, o) => json("POST", `/boards/${seg(id)}/connectors`, connector, o),
