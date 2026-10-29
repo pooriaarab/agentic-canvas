@@ -195,3 +195,20 @@ describe("tools", () => {
     }
   }, 60_000);
 });
+
+describe("sharing tools with a client from another bundle", () => {
+  test("a CanvasApiError that is not of this bundle's class keeps its code", async () => {
+    const { Client: McpClient } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { createMcpServer } = await import("./mcp.js");
+    const refused = Object.assign(new Error("only an owner shares"), { name: "CanvasApiError", code: "FORBIDDEN", status: 403 });
+    const sharing = { access: async () => Promise.reject(refused), grant: async () => Promise.reject(refused), revoke: async () => Promise.reject(refused), invite: async () => Promise.reject(refused) };
+    const server = createMcpServer({} as never, { kind: "human", id: "ada" }, sharing);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const client = new McpClient({ name: "test", version: "0" });
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const result = (await client.callTool({ name: "list_access", arguments: { board: "x" } })) as { isError?: boolean; content: { text: string }[] };
+    expect([result.isError, JSON.parse(result.content[0]!.text)]).toEqual([true, { code: "FORBIDDEN", message: "only an owner shares" }]);
+    await client.close();
+  });
+});

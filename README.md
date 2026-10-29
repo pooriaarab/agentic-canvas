@@ -363,7 +363,7 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | `PRINCIPAL_KINDS`, `PrincipalKind` (type), `Principal` (type), `principalSchema`, `isMachineMade` | The principal kinds, the schema of a principal, and the rule that marks machine-made kinds. `principalSchema` uses the identity rule below. |
 | `operatorActor(env?)`, `ActorConfigError` | Read the actor from `CANVAS_ACTOR` as `<kind>:<id>`. It throws `ActorConfigError` when the value is missing or bad. |
 | `CanvasService` | The board operations that the CLI, the MCP server and the Worker share. It takes a `Store`. |
-| `createMcpServer(service, actor)`, `runMcp(service, actor)` | Make the MCP server, or run it on stdio. |
+| `createMcpServer(service, actor, sharing?)`, `runMcp(service, actor, sharing?)` | Make the MCP server, or run it on stdio. `sharing` is a client from `agentic-canvas/client`: it turns on the sharing tools. |
 | `createFileStore`, `openLocalStore`, `FileStoreOptions` (type) | Stores on one local file. See `agentic-canvas/file-store`. |
 
 ### Actor ids

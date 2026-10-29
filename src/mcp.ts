@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { BRAND } from "./brand.js";
-import { CanvasApiError, type BoardSharing } from "./client.js";
+import type { BoardSharing } from "./client.js";
 import { CanvasError, SHAPE_TYPES } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
 import { svgToPng } from "./png.js";
@@ -10,9 +10,13 @@ import type { BoardAccess } from "./service.js";
 
 const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
 
+// The client bundle has its own CanvasApiError class, so an `instanceof` check would miss one from `agentic-canvas/client`.
+const isApiError = (error: unknown): error is Error & { code: string } =>
+  error instanceof Error && error.name === "CanvasApiError" && typeof (error as { code?: unknown }).code === "string";
+
 // A CanvasError or a CanvasApiError is safe to show. Anything else may hold a path or a stack, so the caller gets a fixed message.
 function failure(error: unknown) {
-  const safe = error instanceof CanvasError || error instanceof CanvasApiError;
+  const safe = error instanceof CanvasError || isApiError(error);
   if (!safe) console.error(error instanceof Error ? error.message : String(error));
   const body = safe ? { code: error.code, message: error.message } : { code: "INTERNAL", message: "the board operation failed" };
   return { isError: true as const, content: [{ type: "text" as const, text: JSON.stringify(body) }] };
