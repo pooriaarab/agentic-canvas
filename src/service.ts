@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
 import type { Principal } from "./core/principal.js";
@@ -14,7 +15,7 @@ export class CanvasService {
   constructor(private readonly store: BoardStore) {}
 
   async create(actor: Principal, options: { id?: string; title?: string } = {}): Promise<{ id: string; title: string }> {
-    const id = options.id ?? crypto.randomUUID();
+    const id = options.id ?? randomUUID();
     if (!BOARD_ID.test(id)) throw new CanvasError("INVALID", "board id must be 1 to 64 of A-Z, a-z, 0-9, _ and -");
     const board = new Board();
     if (options.title !== undefined) board.setTitle(options.title, actor);
