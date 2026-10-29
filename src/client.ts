@@ -45,6 +45,37 @@ export interface ConnectorInput {
 export type ShapePatch = Partial<Pick<ShapeInput, "x" | "y" | "w" | "h" | "text" | "fill" | "stroke" | "src">>;
 export type ConnectorPatch = Partial<Pick<ConnectorInput, "from" | "to" | "text" | "startArrow" | "endArrow" | "stroke">>;
 
+/** A role on a board, from least to most. */
+export type BoardRole = "viewer" | "commenter" | "editor" | "owner";
+/** Who holds a grant. A person and an agent may share one id and hold separate roles. */
+export type SubjectKind = "human" | "agent";
+export interface Subject {
+  subjectKind: SubjectKind;
+  subjectId: string;
+}
+export interface BoardGrant {
+  subjectKind: string;
+  subjectId: string;
+  role: BoardRole;
+  [field: string]: unknown;
+}
+/** An open invite. It never shows the email. */
+export interface BoardInvite {
+  id: string;
+  role: BoardRole;
+  [field: string]: unknown;
+}
+export interface InviteInput {
+  /** Not `owner`: only a grant makes an owner. */
+  role: Exclude<BoardRole, "owner">;
+  /** The person to invite. Give this or `handle`. */
+  email?: string;
+  /** The agent to invite. Give this or `email`. */
+  handle?: string;
+  /** How long the invite lives, in milliseconds. */
+  expiresInMs?: number;
+}
+
 export interface ImageInfo {
   id: string;
   ref: string;
@@ -92,6 +123,14 @@ export interface CanvasClient {
   move(id: string, element: string, dx: number, dy: number, options?: CallOptions): Promise<{ moved: string[] }>;
   /** Remove an element. Returns the ids removed. */
   remove(id: string, element: string, options?: CallOptions): Promise<{ removed: string[] }>;
+  /** The grants and the open invites of a board. Needs the owner role. */
+  access(id: string, options?: CallOptions): Promise<{ grants: BoardGrant[]; invites: BoardInvite[] }>;
+  /** Give a person or an agent a role on a board. Needs the owner role. */
+  grant(id: string, input: Subject & { role: BoardRole }, options?: CallOptions): Promise<{ ok: true }>;
+  /** Take a role back. The last owner cannot be removed. Needs the owner role. */
+  revoke(id: string, input: Subject, options?: CallOptions): Promise<{ ok: true }>;
+  /** Invite a person by email or an agent by handle. Returns the invite id. Needs the owner role. */
+  invite(id: string, input: InviteInput, options?: CallOptions): Promise<{ id: string }>;
   uploadImage(bytes: Uint8Array | ArrayBuffer | Blob, options?: CallOptions): Promise<ImageInfo>;
   /** The bytes of a stored image, and its content type. */
   getImage(id: string, options?: CallOptions): Promise<{ bytes: Uint8Array; type: string }>;
@@ -99,6 +138,17 @@ export interface CanvasClient {
   state(id: string, options?: CallOptions): Promise<Uint8Array>;
   /** Merge a live room's Yjs update into the stored board. Only a server with live rooms serves it. */
   checkpoint(id: string, update: Uint8Array, options?: CallOptions): Promise<{ elements: number; fixed: string[] }>;
+}
+
+/** What the CLI and the MCP server need to share a board. Sharing lives on the server, so it needs a client. */
+export type BoardSharing = Pick<CanvasClient, "access" | "grant" | "revoke" | "invite">;
+
+/** `kind:id` of a person or an agent, as the CLI and the tools write it. */
+export function parseSubject(text: string): Subject {
+  const at = text.indexOf(":");
+  const kind = text.slice(0, at);
+  if (at < 1 || (kind !== "human" && kind !== "agent") || at === text.length - 1) throw new TypeError(`"${text}" is not human:<id> or agent:<id>`);
+  return { subjectKind: kind, subjectId: text.slice(at + 1) };
 }
 
 export function createClient(options: ClientOptions): CanvasClient {
@@ -166,6 +216,10 @@ export function createClient(options: ClientOptions): CanvasClient {
     update: (id, element, patch, o) => json("PATCH", `/boards/${seg(id)}/elements/${seg(element)}`, patch, o),
     move: (id, element, dx, dy, o) => json("POST", `/boards/${seg(id)}/move`, { element, dx, dy }, o),
     remove: (id, element, o) => json("DELETE", `/boards/${seg(id)}/elements/${seg(element)}`, undefined, o),
+    access: (id, o) => json("GET", `/boards/${seg(id)}/access`, undefined, o),
+    grant: (id, input, o) => json("POST", `/boards/${seg(id)}/grants`, input, o),
+    revoke: (id, { subjectKind, subjectId }, o) => json("DELETE", `/boards/${seg(id)}/grants?subjectKind=${seg(subjectKind)}&subjectId=${seg(subjectId)}`, undefined, o),
+    invite: (id, input, o) => json("POST", `/boards/${seg(id)}/invites`, input, o),
     uploadImage: async (data, o) => parse<ImageInfo>(await send("POST", "/images", { body: data as BodyInit, contentType: "application/octet-stream" }, o), o),
     getImage: async (id, o) => {
       const response = await send("GET", `/images/${seg(id)}`, {}, o);

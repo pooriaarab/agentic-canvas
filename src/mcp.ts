@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { BRAND } from "./brand.js";
+import { CanvasApiError, type BoardSharing } from "./client.js";
 import { CanvasError, SHAPE_TYPES } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
 import { svgToPng } from "./png.js";
@@ -9,10 +10,11 @@ import type { BoardAccess } from "./service.js";
 
 const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
 
-// A CanvasError is safe to show. Anything else may hold a path or a stack, so the caller gets a fixed message.
+// A CanvasError or a CanvasApiError is safe to show. Anything else may hold a path or a stack, so the caller gets a fixed message.
 function failure(error: unknown) {
-  if (!(error instanceof CanvasError)) console.error(error instanceof Error ? error.message : String(error));
-  const body = error instanceof CanvasError ? { code: error.code, message: error.message } : { code: "INTERNAL", message: "the board operation failed" };
+  const safe = error instanceof CanvasError || error instanceof CanvasApiError;
+  if (!safe) console.error(error instanceof Error ? error.message : String(error));
+  const body = safe ? { code: error.code, message: error.message } : { code: "INTERNAL", message: "the board operation failed" };
   return { isError: true as const, content: [{ type: "text" as const, text: JSON.stringify(body) }] };
 }
 
@@ -31,9 +33,10 @@ const num = z.number();
 
 /**
  * The tools mirror the CLI. The actor is fixed here by the operator. No tool takes an actor,
- * author, or kind, so a caller cannot choose who it writes as.
+ * author, or kind, so a caller cannot choose who it writes as. The sharing tools run on a server, as the owner of its token:
+ * with no `sharing` client they fail with UNAVAILABLE.
  */
-export function createMcpServer(service: BoardAccess, actor: Principal): McpServer {
+export function createMcpServer(service: BoardAccess, actor: Principal, sharing?: BoardSharing): McpServer {
   const server = new McpServer({ name: BRAND.command, version: BRAND.version });
   const read = { readOnlyHint: true };
 
@@ -118,10 +121,39 @@ export function createMcpServer(service: BoardAccess, actor: Principal): McpServ
     { description: "Export the board as a PNG image. Needs the optional playwright-core and a Chromium.", inputSchema: { board }, annotations: read },
     tool(async (a) => ({ content: [{ type: "image" as const, data: Buffer.from(await svgToPng(await service.exportSvg(a.board))).toString("base64"), mimeType: "image/png" }] })),
   );
+
+  const shared = (): BoardSharing => {
+    if (!sharing) throw new CanvasError("UNAVAILABLE", "sharing needs a server: set CANVAS_SERVER and CANVAS_TOKEN");
+    return sharing;
+  };
+  const kind = z.enum(["human", "agent"]).describe("human or agent. A person and an agent can share one id, and hold separate roles.");
+  server.registerTool(
+    "list_access",
+    { description: "List the grants and the open invites of a board. Needs the owner role.", inputSchema: { board }, annotations: read },
+    tool(async (a) => json(await shared().access(a.board))),
+  );
+  server.registerTool(
+    "grant_access",
+    { description: "Give a person or an agent a role on a board. Needs the owner role.", inputSchema: { board, subjectKind: kind, subjectId: z.string(), role: z.enum(["viewer", "commenter", "editor", "owner"]) } },
+    tool(async ({ board: b, ...input }) => json(await shared().grant(b, input))),
+  );
+  server.registerTool(
+    "revoke_access",
+    { description: "Take a role back from a person or an agent. The last owner cannot be removed. Needs the owner role.", inputSchema: { board, subjectKind: kind, subjectId: z.string() }, annotations: { destructiveHint: true } },
+    tool(async ({ board: b, ...input }) => json(await shared().revoke(b, input))),
+  );
+  server.registerTool(
+    "create_invite",
+    {
+      description: "Invite a person by email or an agent by handle to a board. Give email or handle, not both. The role is not owner. Needs the owner role.",
+      inputSchema: { board, role: z.enum(["viewer", "commenter", "editor"]), email: z.string().optional(), handle: z.string().optional(), expiresInMs: z.number().optional() },
+    },
+    tool(async ({ board: b, ...input }) => json(await shared().invite(b, input))),
+  );
   return server;
 }
 
 /** Serve the tools on stdin and stdout. Stdout carries protocol frames only. */
-export async function runMcp(service: BoardAccess, actor: Principal): Promise<void> {
-  await createMcpServer(service, actor).connect(new StdioServerTransport());
+export async function runMcp(service: BoardAccess, actor: Principal, sharing?: BoardSharing): Promise<void> {
+  await createMcpServer(service, actor, sharing).connect(new StdioServerTransport());
 }

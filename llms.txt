@@ -10,7 +10,7 @@ Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 - UI: the Worker serves a web UI at its root (run `npm run build`, then `wrangler dev`). A person signs in with a bearer token: an agentic-identity credential (scope canvas:write or canvas:read). A static CANVAS_API_TOKENS list works only with CANVAS_UNSAFE_STATIC_TOKENS=1 (dev).
 - Live: set CANVAS_SERVER and CANVAS_TOKEN, and the CLI and `agentic-canvas mcp` edit the board in its live room.
 - SDK: import { LiveBoard, LiveService } from "agentic-canvas/live".
-- SDK: import { createClient, CanvasApiError } from "agentic-canvas/client". It calls the Worker API with fetch. Methods: me, listBoards, createBoard, readBoard, deleteBoard, exportSvg, addShape, addConnector, drawFlow, update, move, remove, uploadImage, getImage, state, checkpoint. A failure throws CanvasApiError with `code` and `status`. No retries.
+- SDK: import { createClient, CanvasApiError } from "agentic-canvas/client". It calls the Worker API with fetch. Methods: me, listBoards, createBoard, readBoard, deleteBoard, exportSvg, addShape, addConnector, drawFlow, update, move, remove, access, grant, revoke, invite, uploadImage, getImage, state, checkpoint. A failure throws CanvasApiError with `code` and `status`. No retries.
 - UI: import { mount } from "agentic-canvas/ui"; import "agentic-canvas/ui.css" (with agentic-design/styles.css). mount(element, { boardId, client, principal: { kind, name, role }, readOnly?, room?: { baseUrl, token } }) renders the board and returns { update(options), unmount() }. BoardEditor is the same as a React component. React 19 is a peer dependency.
 
 ## Docs

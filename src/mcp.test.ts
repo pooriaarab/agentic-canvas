@@ -47,7 +47,7 @@ describe("tools", () => {
     const client = await connect(fresh());
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     await client.close();
-    expect(names).toEqual(["add_shape", "connect", "create_board", "delete_board", "draw_flow", "export_png", "export_svg", "list_boards", "move", "read_board", "remove", "update_element"]);
+    expect(names).toEqual(["add_shape", "connect", "create_board", "create_invite", "delete_board", "draw_flow", "export_png", "export_svg", "grant_access", "list_access", "list_boards", "move", "read_board", "remove", "revoke_access", "update_element"]);
   });
 
   test("deletes a board, and a second delete is a NOT_FOUND tool error", async () => {

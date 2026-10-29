@@ -5,6 +5,7 @@ import { BRAND } from "./brand.js";
 import { CanvasError } from "./core/board.js";
 import { ActorConfigError, operatorActor } from "./actor.js";
 import type { Principal } from "./core/principal.js";
+import { CanvasApiError, createClient, parseSubject } from "./client.js";
 import { runMcp } from "./mcp.js";
 import { svgToPng } from "./png.js";
 import { CanvasService, type BoardAccess } from "./service.js";
@@ -30,11 +31,16 @@ Commands:
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
   export <board> [--format svg|png] [--out <path>]  Print SVG, or write PNG to --out.
   repair <board> [--drop <element>]...     Owner only: fix a broken or over-cap board. Needs CANVAS_ACTOR=human:<id>.
+  access <board>                           Server only. List the grants and open invites. Owner.
+  grant <board> <human|agent>:<id> --role <viewer|commenter|editor|owner>  Server only. Give a role. Owner.
+  revoke <board> <human|agent>:<id>        Server only. Take a role back. Owner.
+  invite <board> --role <viewer|commenter|editor> --email <e> | --handle <h> [--expires-in-ms <n>]  Server only. Owner.
   mcp                                      Serve these as MCP tools on stdio. Needs CANVAS_ACTOR.
 
 Live mode: set CANVAS_SERVER=<worker url> and CANVAS_TOKEN=<bearer token>. Every command then runs in the live room of
 the board on that server, so a person and an agent can edit one board at once. The token sets the actor, the kind,
 and the role, so CANVAS_ACTOR is not needed. If it is set, it must match the token. --dir, CANVAS_DIR, and repair are local only.
+The sharing commands need CANVAS_SERVER: a local store has no owners.
 
 Write commands need an actor in CANVAS_ACTOR as <kind>:<id>, such as "agent:helper".
 The operator sets it. A caller cannot pick its own kind: there is no --actor flag.
@@ -46,7 +52,7 @@ const flags = {
   type: { type: "string" }, x: { type: "string" }, y: { type: "string" }, w: { type: "string" }, h: { type: "string" },
   text: { type: "string" }, fill: { type: "string" }, stroke: { type: "string" }, src: { type: "string" },
   dx: { type: "string" }, dy: { type: "string" }, file: { type: "string" }, prefix: { type: "string" },
-  format: { type: "string" }, out: { type: "string" }, drop: { type: "string", multiple: true },
+  format: { type: "string" }, role: { type: "string" }, email: { type: "string" }, handle: { type: "string" }, "expires-in-ms": { type: "string" }, out: { type: "string" }, drop: { type: "string", multiple: true },
   help: { type: "boolean" }, version: { type: "boolean" },
 } as const;
 
@@ -96,6 +102,18 @@ async function run(argv: string[]): Promise<void> {
     } catch (error) {
       if (error instanceof ActorConfigError) throw new UsageError(`"${command}" needs an actor: ${error.message}`);
       throw error;
+    }
+  };
+  // Sharing lives on the server: the client sends the token, and the server decides who may share.
+  const sharing = () => {
+    if (!server) throw new UsageError(`"${command}" needs a server: set CANVAS_SERVER and CANVAS_TOKEN`);
+    return createClient({ baseUrl: `${server.replace(/\/$/, "")}/api/v1/canvas`, token: process.env.CANVAS_TOKEN! });
+  };
+  const subject = (text: string | undefined) => {
+    try {
+      return parseSubject(text ?? "");
+    } catch (error) {
+      throw new UsageError((error as Error).message);
     }
   };
   const print = (value: unknown): void => console.log(JSON.stringify(value));
@@ -149,9 +167,23 @@ async function run(argv: string[]): Promise<void> {
     case "repair":
       need(1, "<board> [--drop <element>]...");
       return print(await (service as CanvasService).repair(board, actor(), v.drop ?? []));
+    case "access":
+      need(1, "<board>");
+      return print(await sharing().access(board));
+    case "grant":
+      need(2, "<board> <human|agent>:<id> --role <role>");
+      return print(await sharing().grant(board, { ...subject(rest[0]), role: v.role as never }));
+    case "revoke":
+      need(2, "<board> <human|agent>:<id>");
+      return print(await sharing().revoke(board, subject(rest[0])));
+    case "invite": {
+      need(1, "<board> --role <role> --email <e> | --handle <h> [--expires-in-ms <n>]");
+      const expiresInMs = num(v["expires-in-ms"]);
+      return print(await sharing().invite(board, { role: v.role as never, email: v.email, handle: v.handle, ...(expiresInMs === undefined ? {} : { expiresInMs }) }));
+    }
     case "mcp":
       need(0, "");
-      return runMcp(service, actor());
+      return runMcp(service, actor(), server ? sharing() : undefined);
     default:
       throw new UsageError(`unknown command "${command}"`);
   }
@@ -162,7 +194,7 @@ run(process.argv.slice(2)).catch((error: unknown) => {
   if (error instanceof UsageError || code.startsWith("ERR_PARSE_ARGS")) {
     console.error(`${(error as Error).message}\nRun "${BRAND.command} --help" for usage.`);
     process.exitCode = 2;
-  } else if (error instanceof CanvasError) {
+  } else if (error instanceof CanvasError || error instanceof CanvasApiError) {
     console.error(`${error.code}: ${error.message}`);
     process.exitCode = 1;
   } else {
