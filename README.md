@@ -119,7 +119,7 @@ cd agentic-canvas
 npm install && npm run dev
 ```
 
-`bun install && bun run dev` also works if npm is installed too. The scripts need macOS, Linux, or WSL. The `dev` script builds the package, then starts `wrangler dev` on <http://localhost:8793>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
+You can also use `bun install && bun run dev`. The `dev` script calls npm, so npm must be installed. The scripts need macOS, Linux, or WSL. The `dev` script builds the package, then starts `wrangler dev` on <http://localhost:8793>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
 
 ```sh
 curl -i http://localhost:8793/health   # 200
