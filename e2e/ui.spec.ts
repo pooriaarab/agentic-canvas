@@ -129,7 +129,7 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
     return ["Shape palette", "Zoom and pan"].map((name) => !!(document.querySelector(`[role=toolbar][aria-label="${name}"]`)!.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toEqual([true, true]);
-  await page.keyboard.press("Tab"); // the canvas
+  await page.keyboard.press("Tab"); // the first toolbar
   await page.locator(".canvas").focus();
   await page.keyboard.press("Tab");
   await expect(item(page, "Rectangle: First")).toBeFocused();
