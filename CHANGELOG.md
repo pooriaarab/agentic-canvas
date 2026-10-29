@@ -1,13 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+**Breaking changes**
+
+- The Worker signs requests in with `agentic-identity` credentials in the Store by default. The principal's scopes set the role: `canvas:write` is an editor, `canvas:read` a viewer. A deploy that relied on `CANVAS_API_TOKENS` alone must issue `agentic-identity` credentials before it upgrades.
+- `CANVAS_API_TOKENS` is a dev fallback. It is read only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. A Worker that sets the list without the switch answers 503 `NOT_CONFIGURED` on every API request until you set the switch or remove the list.
+- `authenticate(request, env)` from `agentic-canvas/worker` reads the static list only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. Its new optional third argument is the Store.
+- A write or a live socket that rides on the `session` cookie gets 401. A bearer credential is needed for writes.
+- A Store that fails during sign-in answers 503 or 500, not 401, so a caller does not think its credential is wrong.
+
+**Added**
+
+- Delete a whole board for good: the `delete <board>` CLI command, the `delete_board` MCP tool, `deleteBoard(id)` in `agentic-canvas/client`, and `DELETE /boards/:id` in the Worker. The Worker also erases the board's live room. The SDK's `LiveService` has `delete(id)`.
 
 **Changed**
 
-- Breaking for a deploy that sets `CANVAS_API_TOKENS`: it answers 503 until you issue `agentic-identity` credentials, or set `CANVAS_UNSAFE_STATIC_TOKENS=1` for a dev setup.
-- The Worker signs requests in with `agentic-identity` credentials in the Store by default. The principal's scopes set the role: `canvas:write` is an editor, `canvas:read` a viewer.
-- `CANVAS_API_TOKENS` is a dev fallback. It is read only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. A Worker that sets the list without the switch answers 503 `NOT_CONFIGURED`.
-- `authenticate(request, env, store?)` takes the Store as an optional third argument.
+- Depend on `agentic-realtime` 0.4 (was 0.3).
+- The sticky note colors come from `agentic-design` tokens, so they follow the theme. The board styles hold no hex color.
+- The README "Auth" section describes the identity credentials and the dev fallback.
 
 ## 0.6.1
 
