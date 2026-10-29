@@ -144,6 +144,18 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
   const kept = await box(page, "Rectangle");
   expect([Math.round(kept.x - start.x), Math.round(kept.width - start.width)]).toEqual([20, 10]);
 
+  // Without a drag (WCAG 2.5.7): the position fields move an item, and the pan buttons move the view.
+  await item(page, "Rectangle: First").focus();
+  const x = await box(page, "Rectangle");
+  await page.getByLabel("X", { exact: true }).fill("500");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect.poll(async () => Math.round(Math.abs((await box(page, "Rectangle")).x - x.x))).toBeGreaterThan(100);
+  await saved(page);
+  expect((await client.readBoard("keys")).nodes.find((n) => n.id === "k1")?.x).toBe(500);
+  const panned = await box(page, "Rectangle");
+  await page.getByRole("button", { name: "Pan left" }).click();
+  await expect.poll(async () => Math.round((await box(page, "Rectangle")).x - panned.x)).toBe(80);
+
   await item(page, "Rectangle: First").focus();
   await page.keyboard.press("Escape");
   await expect(item(page, "Rectangle: First")).toHaveAttribute("aria-pressed", "false");

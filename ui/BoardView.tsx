@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import type { ShapeType } from "../src/core/board";
 import type { BoardData, EdgeData, NodeData } from "../src/core/read";
 import { CanvasApiError, clientFor, describe } from "./api";
-import { Canvas, MAX_ZOOM, MIN_ZOOM, TYPE_NAME, byline, type View } from "./Canvas";
+import { Canvas, HOME, MAX_ZOOM, MIN_ZOOM, PAN_STEP, TYPE_NAME, byline, type View } from "./Canvas";
 import { Failure } from "./Failure";
 import { joinRoom, type Room } from "./presence";
 
@@ -21,12 +21,12 @@ const TOOLS: { type: ShapeType; text: string; icon: ReactNode }[] = [
 const DEFAULT_SIZE: Record<string, [number, number]> = { rect: [140, 70], ellipse: [140, 70], diamond: [140, 90], text: [140, 40], sticky: [150, 120] };
 const DEFAULT_TEXT: Record<string, string> = { rect: "Rectangle", ellipse: "Ellipse", diamond: "Decision", text: "Text", sticky: "Note" };
 
-export function BoardView({ id, token, me }: { id: string; token: string; me: { actor: string; role: "editor" | "viewer" } }) {
+export function BoardView({ id, token, me }: { id: string; token: string; me: { actor: string; kind: string; role: "editor" | "viewer" } }) {
   const client = useMemo(() => clientFor(token), [token]);
   const toast = useToast();
   const [board, setBoard] = useState<State>({ state: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
-  const [view, setView] = useState<View>({ x: 40, y: 40, k: 1 });
+  const [view, setView] = useState<View>(HOME);
   const [peers, setPeers] = useState<PresenceEntry[]>([]);
   const [live, setLive] = useState(false);
   const room = useRef<Room | undefined>(undefined);
@@ -37,12 +37,16 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
 
   const [saving, setSaving] = useState(0);
   const pending = useRef(0);
+  const generation = useRef(0);
   const lastRead = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const read = useCallback(async () => {
     try {
+      const started = generation.current;
       const data = await client.readBoard(id);
+      // A write that began while this read ran makes the read old: its values would undo the write on screen.
+      if (started !== generation.current || pending.current > 0) return;
       setBoard({ state: "ready", data });
     } catch (e) {
       // A failed refresh keeps the board on screen. Only a first load shows the error page.
@@ -93,6 +97,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
   const write = useCallback(
     (change: () => Promise<unknown>, failure: string, select?: string) => {
       pending.current++;
+      generation.current++;
       setSaving((n) => n + 1);
       queue.current = queue.current.then(async () => {
         try {
@@ -123,9 +128,11 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
     patchLocal((n) => (n.id === target ? { ...n, x: n.x + dx, y: n.y + dy } : n));
     write(() => client.move(id, target, dx, dy), "Could not move the item");
   };
-  const resize = (target: string, w: number, h: number) => {
-    patchLocal((n) => (n.id === target ? { ...n, w, h } : n));
-    write(() => client.update(id, target, { w, h }), "Could not resize the item");
+  const resize = (target: string, w: number, h: number) => place(target, { w, h });
+  /** Set the position or the size of a shape. A person who cannot drag uses this from the side panel. */
+  const place = (target: string, patch: { x?: number; y?: number; w?: number; h?: number }) => {
+    patchLocal((n) => (n.id === target ? { ...n, ...patch } : n));
+    write(() => client.update(id, target, patch), "Could not change the item");
   };
   const remove = (target: string) => {
     setSelected(null);
@@ -159,7 +166,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
     <section className="board" aria-labelledby="board-h">
       <div className="row">
         <h1 id="board-h">{d.title || d.id}</h1>
-        <PresenceStack entries={[{ id: "me", name: me.actor, kind: "person" }, ...peers]} label={live ? "In this board" : "In this board (not live)"} />
+        <PresenceStack entries={[{ id: "me", name: me.actor, kind: me.kind === "human" ? "person" : "agent" }, ...peers]} label={live ? "In this board" : "In this board (not live)"} />
       </div>
       <Toolbar label="Board tools">
         {TOOLS.map((t) => (
@@ -168,7 +175,11 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
         <ToolbarSeparator />
         <ToolbarButton label="Zoom out" icon={icon(<path d="M4 10h12" />)} onClick={() => zoom(1 / 1.25)} />
         <ToolbarButton label="Zoom in" icon={icon(<path d="M4 10h12M10 4v12" />)} onClick={() => zoom(1.25)} />
-        <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView({ x: 40, y: 40, k: 1 })} />
+        <ToolbarButton label="Pan left" icon={icon(<path d="M12 4l-6 6 6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x + PAN_STEP }))} />
+        <ToolbarButton label="Pan right" icon={icon(<path d="M8 4l6 6-6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x - PAN_STEP }))} />
+        <ToolbarButton label="Pan up" icon={icon(<path d="M4 12l6-6 6 6" />)} onClick={() => setView((v) => ({ ...v, y: v.y + PAN_STEP }))} />
+        <ToolbarButton label="Pan down" icon={icon(<path d="M4 8l6 6 6-6" />)} onClick={() => setView((v) => ({ ...v, y: v.y - PAN_STEP }))} />
+        <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView(HOME)} />
       </Toolbar>
       <p className="note" role="status">{editable ? status : ""}</p>
       {!editable && <p className="note">This token can read the board but not change it.</p>}
@@ -179,7 +190,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
             <EmptyState title="This board is empty" description={editable ? "Add a shape or a note with the tools above." : "Nothing has been drawn yet."} />
           </div>
         )}
-        <Inspector key={item?.id ?? "none"} item={item} nodes={d.nodes} editable={editable} onText={(text) => item && write(() => client.update(id, item.id, { text }), "Could not save the text")} onResize={resize} onDelete={remove} onConnect={(to) => item && write(() => client.addConnector(id, { from: { id: item.id }, to: { id: to } }), "Could not connect")} />
+        <Inspector key={item ? `${item.id}:${"w" in item ? `${item.x},${item.y},${item.w},${item.h}` : ""}` : "none"} item={item} nodes={d.nodes} editable={editable} onText={(text) => item && write(() => client.update(id, item.id, { text }), "Could not save the text")} onPlace={place} onDelete={remove} onConnect={(to) => item && write(() => client.addConnector(id, { from: { id: item.id }, to: { id: to } }), "Could not connect")} />
       </div>
     </section>
   );
@@ -187,18 +198,22 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
 
 const asEntry = (p: { kind: string; id: string }): PresenceEntry => ({ id: p.id, name: p.id, kind: p.kind === "human" ? "person" : "agent" });
 
-function Inspector({ item, nodes, editable, onText, onResize, onDelete, onConnect }: { item?: Item; nodes: NodeData[]; editable: boolean; onText: (text: string) => void; onResize: (id: string, w: number, h: number) => void; onDelete: (id: string) => void; onConnect: (to: string) => void }) {
+function Inspector({ item, nodes, editable, onText, onPlace, onDelete, onConnect }: { item?: Item; nodes: NodeData[]; editable: boolean; onText: (text: string) => void; onPlace: (id: string, patch: { x?: number; y?: number; w?: number; h?: number }) => void; onDelete: (id: string) => void; onConnect: (to: string) => void }) {
   const [text, setText] = useState(item?.text ?? "");
   const node = item && item.type !== "connector" ? (item as NodeData) : undefined;
-  const [size, setSize] = useState({ w: String(node?.w ?? ""), h: String(node?.h ?? "") });
+  const [size, setSize] = useState({ x: String(node?.x ?? ""), y: String(node?.y ?? ""), w: String(node?.w ?? ""), h: String(node?.h ?? "") });
   if (!item) return <aside className="inspector" aria-label="Selected item"><p>Select an item to edit it.</p></aside>;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (text !== item.text) onText(text);
     if (node) {
-      const w = Number(size.w);
-      const h = Number(size.h);
-      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && (w !== node.w || h !== node.h)) onResize(node.id, w, h);
+      const next = { x: Number(size.x), y: Number(size.y), w: Number(size.w), h: Number(size.h) };
+      const patch: { x?: number; y?: number; w?: number; h?: number } = {};
+      for (const k of ["x", "y", "w", "h"] as const) {
+        const ok = size[k].trim() !== "" && Number.isFinite(next[k]) && (k === "x" || k === "y" || next[k] > 0);
+        if (ok && next[k] !== node[k]) patch[k] = next[k];
+      }
+      if (Object.keys(patch).length > 0) onPlace(node.id, patch);
     }
   };
   return (
@@ -217,6 +232,8 @@ function Inspector({ item, nodes, editable, onText, onResize, onDelete, onConnec
         <Textarea label="Text" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={10000} disabled={!editable} />
         {node && (
           <div className="sizes">
+            <Input label="X" type="number" value={size.x} onChange={(e) => setSize({ ...size, x: e.target.value })} disabled={!editable} />
+            <Input label="Y" type="number" value={size.y} onChange={(e) => setSize({ ...size, y: e.target.value })} disabled={!editable} />
             <Input label="Width" type="number" min={20} value={size.w} onChange={(e) => setSize({ ...size, w: e.target.value })} disabled={!editable} />
             <Input label="Height" type="number" min={20} value={size.h} onChange={(e) => setSize({ ...size, h: e.target.value })} disabled={!editable} />
           </div>

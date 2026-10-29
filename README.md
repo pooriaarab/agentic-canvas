@@ -146,8 +146,9 @@ What it does:
   board again. Without the room, the page reads the board again every 8 seconds.
 - Works with a keyboard. Tab moves between items. Arrow keys move the selected item, Shift with an
   arrow resizes it, Delete removes it, Escape clears the selection. With nothing selected, arrow
-  keys pan, `+` and `-` zoom, and `0` resets the view. The side panel also sets text and size,
-  and connects shapes, with fields.
+  keys pan, `+` and `-` zoom, and `0` resets the view. The side panel also sets text, position, and size,
+  and connects shapes, with fields, and the toolbar has pan buttons. A person who cannot drag
+  can do everything a drag does.
 
 Develop and test the UI:
 

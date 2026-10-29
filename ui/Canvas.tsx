@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 import type { BoardData, EdgeData, NodeData } from "../src/core/read";
 
 export interface View { x: number; y: number; k: number }
+export const HOME: View = { x: 40, y: 40, k: 1 };
+export const PAN_STEP = 80;
 export const MIN_ZOOM = 0.2;
 export const MAX_ZOOM = 4;
 const STEP = 10;
@@ -153,7 +155,7 @@ export function Canvas({ data, selected, editable, view, onView, onSelect, onMov
     } else if (event.key === "+" || event.key === "=" || event.key === "-") {
       const rect = box.current!.getBoundingClientRect();
       zoomAt(rect.width / 2, rect.height / 2, event.key === "-" ? 1 / 1.25 : 1.25);
-    } else if (event.key === "0") onView({ x: 0, y: 0, k: 1 });
+    } else if (event.key === "0") onView(HOME);
   }
 
   const itemProps = (el: NodeData | EdgeData) => ({

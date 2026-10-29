@@ -14,9 +14,9 @@
   "compatibility_date": "2026-01-01",
   // The root of agentic-identity imports node:module for its version string.
   "compatibility_flags": ["nodejs_compat"],
-  // The live rooms. One Durable Object holds one board.
   // The web UI. `npm run build` writes it to ui-dist. The API and the health check run in the Worker first.
   "assets": { "directory": "./ui-dist", "run_worker_first": ["/api/*", "/health"] },
+  // The live rooms. One Durable Object holds one board.
   "durable_objects": { "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
   "d1_databases": [{ "binding": "DB", "database_name": "agentic-canvas", "database_id": "00000000-0000-0000-0000-000000000000" }],
