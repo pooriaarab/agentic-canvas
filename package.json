@@ -1,6 +1,6 @@
 {
   "name": "agentic-canvas",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A shared whiteboard for diagrams, drawn by people and agents.",
   "keywords": [
     "whiteboard",
@@ -24,7 +24,9 @@
     "node": ">=22"
   },
   "files": [
-    "dist"
+    "dist",
+    "llms.txt",
+    "SKILL.md"
   ],
   "publishConfig": {
     "access": "public"
