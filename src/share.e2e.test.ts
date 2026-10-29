@@ -138,6 +138,13 @@ describe("the typed client", () => {
     await store.transaction((tx) => tx.put("links", "odd", { id: "odd", resourceId: "l-odd", role: "owner", tokenHash: "x" }));
     await ada.createBoard({ id: "l-odd" });
     expect(await ada.links("l-odd")).toMatchObject({ links: [], truncated: true });
+    // A damaged record fails closed: a bad revokedAt shows as revoked, and a bad expiresAt, a wrong key, or a wrong board is not shown.
+    await store.transaction(async (tx) => {
+      await tx.put("links", "bad-revoked", { id: "bad-revoked", resourceId: "l-odd", role: "viewer", tokenHash: "x", revokedAt: true });
+      await tx.put("links", "bad-expiry", { id: "bad-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: "soon" });
+      await tx.put("links", "key-a", { id: "key-b", resourceId: "l-odd", role: "viewer", tokenHash: "x" });
+    });
+    expect((await ada.links("l-odd")).links).toEqual([{ id: "bad-revoked", role: "viewer", signedInOnly: false, revokedAt: 0 }]);
     expect((await ada.links("l-board")).truncated).toBeUndefined();
   });
 

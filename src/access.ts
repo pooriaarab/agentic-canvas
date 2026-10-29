@@ -8,7 +8,7 @@ export { ROLES, SUBJECT_KINDS };
 /** A share link without its token. `revokedAt` is set once the link is revoked. */
 export interface LinkSummary {
   id: string;
-  role: Role;
+  role: Exclude<Role, "owner">;
   signedInOnly: boolean;
   expiresAt?: number;
   revokedAt?: number;
@@ -185,18 +185,21 @@ export class CanvasAccess {
     let cut = false;
     for (let pages = 0; pages < 10; pages++) {
       const page = await this.store.query("links", { where: { resourceId: id }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
-      for (const { data } of page.items) {
-        // A record that is not a share link is not shown. The list says it is not complete.
-        if (typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role)) {
+      for (const { id: key, data } of page.items) {
+        // A record that is not a share link of this board is not shown. The list says it is not complete.
+        // A bad `expiresAt` is a dead link for agentic-identity, so it is not shown as one that never ends.
+        const expiresOk = data.expiresAt === undefined || (typeof data.expiresAt === "number" && Number.isFinite(data.expiresAt));
+        if (data.id !== key || data.resourceId !== id || typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role) || !expiresOk) {
           cut = true;
           continue;
         }
         all.push({
           id: data.id,
-          role: data.role as Role,
+          role: data.role as LinkSummary["role"],
           signedInOnly: data.signedInOnly === true,
           ...(typeof data.expiresAt === "number" ? { expiresAt: data.expiresAt } : {}),
-          ...(typeof data.revokedAt === "number" ? { revokedAt: data.revokedAt } : {}),
+          // Any value but null means revoked, as in agentic-identity. A value that is not a time shows as 0.
+          ...(data.revokedAt == null ? {} : { revokedAt: typeof data.revokedAt === "number" ? data.revokedAt : 0 }),
         });
       }
       if ((cursor = page.nextCursor) === undefined) break;
