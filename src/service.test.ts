@@ -38,7 +38,8 @@ describe("owner repair actor", () => {
 //  6. A garbage update is INVALID and the board is unchanged. An unknown board is NOT_FOUND.
 //  7. A client changes the content of an old element or the title and leaves the stamp as it was: the change is undone.
 //  8. A client adds a root type or a meta key of its own: a root is refused, a key is deleted.
-//  9. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
+//  9. A client adds a key of its own to an element: the key is deleted, on an old element and on a new trusted one.
+// 10. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
 describe("live checkpoint", () => {
   const bot: Principal = { kind: "agent_of_human", id: "helper" };
   const eve: Principal = { kind: "human", id: "eve" };
@@ -120,6 +121,19 @@ describe("live checkpoint", () => {
     await expect(service.checkpoint("b", strange, bot, [bot])).rejects.toMatchObject({ code: "INVALID" });
     const key = await room(service, (b) => b.doc.getMap("meta").set("junk", "x"));
     expect((await service.checkpoint("b", key, bot, [bot])).fixed).toEqual(["meta:junk"]);
+  });
+
+  test("a key the board does not know is deleted from an old element and from a new trusted one", async () => {
+    const service = await open();
+    const update = await room(service, (b) => {
+      b.addShape({ id: "s2", type: "rect", x: 1, y: 1 }, bot);
+      for (const id of ["s1", "s2"]) b.doc.getMap<Y.Map<unknown>>("elements").get(id)!.set("junk", "x".repeat(1000));
+    });
+    const result = await service.checkpoint("b", update, bot, [bot, human]);
+    expect(result.fixed).toEqual(["s1", "s2"]);
+    const stored = Board.open(await service.state("b")).doc.getMap<Y.Map<unknown>>("elements");
+    expect([...stored.get("s1")!.keys()]).not.toContain("junk");
+    expect([...stored.get("s2")!.keys()]).not.toContain("junk");
   });
 
   test("a garbage update is INVALID, an unknown board is NOT_FOUND, and a connector on a deleted shape goes too", async () => {

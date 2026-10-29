@@ -281,6 +281,12 @@ export class Board {
         }
         fixed.push(el.id);
       }
+      for (const el of this.allStored()) {
+        const entry = this.elements.get(el.id)!;
+        const extra = [...entry.keys()].filter((key) => !(key in el));
+        extra.forEach((key) => entry.delete(key));
+        if (extra.length > 0 && !fixed.includes(el.id)) fixed.push(el.id);
+      }
       const by = this.titleBy;
       const stampKept = by && prior.titleBy ? samePrincipal(by, prior.titleBy) : by === prior.titleBy;
       if (!(by && trusted(by)) && (this.title !== prior.title || !stampKept)) {
