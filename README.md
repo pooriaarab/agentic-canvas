@@ -279,11 +279,19 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | `FlowGraph` (type), `FlowNode` (type), `FlowEdge` (type), `Placement` (type), `DrawOptions` (type) | Types for a flow and its layout. |
 | `readBoard`, `BoardData` (type), `NodeData` (type), `EdgeData` (type) | Read a board as plain data. |
 | `toSvg(board)`, `svgToPng(svg)` | `toSvg` returns the board as SVG. `svgToPng` turns an SVG string into PNG through Chromium. |
-| `PRINCIPAL_KINDS`, `PrincipalKind` (type), `Principal` (type), `principalSchema`, `isMachineMade` | The principal kinds, the schema of a principal, and the rule that marks machine-made kinds. |
+| `PRINCIPAL_KINDS`, `PrincipalKind` (type), `Principal` (type), `principalSchema`, `isMachineMade` | The principal kinds, the schema of a principal, and the rule that marks machine-made kinds. `principalSchema` uses the identity rule below. |
 | `operatorActor(env?)`, `ActorConfigError` | Read the actor from `CANVAS_ACTOR` as `<kind>:<id>`. It throws `ActorConfigError` when the value is missing or bad. |
 | `CanvasService` | The board operations that the CLI, the MCP server and the Worker share. It takes a `Store`. |
 | `createMcpServer(service, actor)`, `runMcp(service, actor)` | Make the MCP server, or run it on stdio. |
 | `createFileStore`, `openLocalStore`, `FileStoreOptions` (type) | Stores on one local file. See `agentic-canvas/file-store`. |
+
+### Actor ids
+
+One rule names an actor in every new write, in the SDK, the CLI, the MCP server and the Worker. The kind must be
+one of `PRINCIPAL_KINDS`. The id has 1 to 128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_` and `-`, and starts
+with a letter, digit, `_` or `-`. The rule comes from `parsePrincipal` in `agentic-identity`. A write with another
+id fails with `INVALID`. A board that was stored with an older, looser id (up to 200 characters) still opens. The
+old author stays on its elements. Only new writes follow the strict rule.
 
 ### `agentic-canvas/client`
 

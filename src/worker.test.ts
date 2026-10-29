@@ -22,6 +22,11 @@ describe("token roles", () => {
     expect(await ask({ actor: "a", kind: "human" }, "u".repeat(40))).toBeNull();
   });
 
+  test("an actor id holds at most 128 characters of A-Z, a-z, 0-9, dot, underscore and dash", async () => {
+    expect((await ask({ actor: "a".repeat(128), kind: "human" }))?.actor.id).toHaveLength(128);
+    for (const actor of ["a".repeat(129), "", "a b", "a:b", "é", ".a"]) expect(await ask({ actor, kind: "human" })).toBeNull();
+  });
+
   test("the room's seeder name is no token's name", async () => {
     expect(await ask({ actor: "canvas-room", kind: "agent" })).toBeNull();
     expect((await ask({ actor: "canvas-room", kind: "human" }))?.actor.id).toBe("canvas-room");

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1
+
+**Changed**
+
+- `principalSchema` and every new SDK write use the identity kernel rule for an actor id: 1 to 128 characters of letters, digits, `.`, `_` and `-`. An id of 129 to 200 characters, or with a space or other character, now fails with `INVALID`. Boards that hold older ids still read.
+
+**Added**
+
+- Tests for the `/boards/:id/ws` handshake (101 and 401), the 512-character token limit, the token charset, and the 128-character actor id limit.
+
 ## 0.6.0
 
 **Changed**
