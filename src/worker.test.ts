@@ -21,6 +21,11 @@ describe("token roles", () => {
     expect(ask({ actor: "a", role: "editor" })).toBeNull();
     expect(ask({ actor: "a", kind: "human" }, "u".repeat(40))).toBeNull();
   });
+
+  test("the room's seeder name is no token's name", () => {
+    expect(ask({ actor: "canvas-room", kind: "agent" })).toBeNull();
+    expect(ask({ actor: "canvas-room", kind: "human" })?.actor.id).toBe("canvas-room");
+  });
 });
 
 // The browser sends its token as a sub-protocol. Failure cases, written before the parser: a wrong name or a third

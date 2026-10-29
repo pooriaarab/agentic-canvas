@@ -208,3 +208,22 @@ describe("live checkpoint", () => {
     expect((await service.read("b")).edges).toEqual([]);
   });
 });
+
+// Failure cases for `missingFrom`: a room that has all of the board must get nothing, even when the board has deletes
+// (the delete set is always in a diff), and a room that is behind must get what it lacks.
+describe("missingFrom", () => {
+  test("is null for a room with the whole board, deletes included, and the missing part for one that is behind", async () => {
+    const service = new CanvasService(openLocalStore(join(root, `m${n++}`)));
+    await service.create(human, { id: "b" });
+    await service.add("b", { id: "s1", type: "rect", x: 0, y: 0 }, human);
+    const early = await service.state("b");
+    await service.add("b", { id: "s2", type: "rect", x: 1, y: 1 }, human);
+    await service.remove("b", "s1");
+    expect(await service.missingFrom("b", await service.state("b"))).toBeNull();
+    const behind = await service.missingFrom("b", early);
+    const room = Board.decode(early);
+    Y.applyUpdate(room.doc, behind!);
+    expect(room.list().map((e) => e.id)).toEqual(["s2"]);
+    expect(await service.missingFrom("b")).not.toBeNull();
+  });
+});

@@ -110,4 +110,68 @@ describe("live room", () => {
     expect((await (await call("/boards/b1", HUMAN)).json()).nodes.map((n: { id: string }) => n.id).sort()).toEqual(["s1", "s2"]);
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
+
+  test("the Worker seeds a room from the Store and saves the room back, with no help from the client", async () => {
+    worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b2" }) });
+    // A change over HTTP, before any room exists.
+    await call("/boards/b2/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: "rest1", type: "rect", x: 0, y: 0 }) });
+
+    // A raw client joins and sees it: the Worker seeded the room. The seed is no author of the board.
+    const ada = await enter("b2", HUMAN);
+    await until(() => new Board(ada.doc).get("rest1") !== undefined, "the room to hold the stored shape");
+    expect(new Board(ada.doc).get("rest1")).toMatchObject({ author: { kind: "human", id: "ada" } });
+    new Board(ada.doc).addShape({ id: "live1", type: "ellipse", x: 5, y: 5 }, { kind: "human", id: "ada" });
+    await ada.flush();
+
+    // The next HTTP call sees the room's edit, with no checkpoint. Then it changes the board, and the room gets that.
+    const read = await (await call("/boards/b2", HUMAN)).json();
+    expect(read.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "rest1"]);
+    await call("/boards/b2/shapes", BOT, { method: "POST", body: JSON.stringify({ id: "rest2", type: "rect", x: 9, y: 9 }) });
+    await call("/boards/b2/elements/rest1", HUMAN, { method: "DELETE" });
+    await clients.splice(0)[0]!.disconnect();
+    const bob = await enter("b2", BOT);
+    await until(() => new Board(bob.doc).list().map((e) => e.id).sort().join() === "live1,rest2", "the room to take the HTTP changes");
+    new Board(bob.doc).addShape({ id: "live2", type: "rect", x: 1, y: 1 }, { kind: "agent_of_human", id: "helper" });
+    await bob.flush();
+
+    // The seeder is in the room's log, but it is no author: a hand save refuses a stamp that names it.
+    bob.doc.getMap<Y.Map<unknown>>("elements").set("seedfake", new Y.Map(Object.entries({ id: "seedfake", type: "rect", x: 0, y: 0, w: 5, h: 5, text: "", z: 9, author: { kind: "agent", id: "canvas-room" }, editedBy: { kind: "agent", id: "canvas-room" } })));
+    await bob.flush();
+    const forgedSave = await call("/boards/b2/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bob.doc) as BodyInit });
+    expect((await forgedSave.json()).fixed).toContain("seedfake");
+
+    // Restart: the edit that only the room has (live2) is in the Store after the next request, and the seeder never shows as an author.
+    await worker.stop();
+    worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
+    const after = await (await call("/boards/b2", HUMAN)).json();
+    expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2"]);
+    expect(JSON.stringify(after)).not.toContain("canvas-room");
+    expect(after.nodes.find((n: { id: string }) => n.id === "live2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
+  }, 180_000);
+
+  test("a room that fails its checks does not lock the board or keep a client out", async () => {
+    worker = await startWorker({ port: PORT + 2, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b3" }) });
+    const bot = await enter("b3", BOT);
+    // A root type of its own makes every save of this room fail, and the room keeps it.
+    bot.doc.getMap("junk").set("a", 1);
+    await bot.flush();
+    await call("/boards/b3/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: "rest1", type: "rect", x: 0, y: 0 }) });
+    expect((await call("/boards/b3", HUMAN)).status).toBe(200);
+    const late = await enter("b3", HUMAN);
+    await until(() => new Board(late.doc).get("rest1") !== undefined, "the room to take the HTTP change");
+  }, 120_000);
+
+  test("a join is refused, not opened empty, when the stored board is too big to seed", async () => {
+    worker = await startWorker({ port: PORT + 3, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b4" }) });
+    // Random text does not compress: 110 elements of 10,000 characters pass the 1,000,000 bytes one seed message may hold.
+    const big = new Board();
+    const random = () => Array.from(crypto.getRandomValues(new Uint8Array(5000)), (v) => v.toString(16).padStart(2, "0")).join("");
+    for (let i = 0; i < 110; i++) big.addShape({ id: `s${i}`, type: "sticky", x: 0, y: 0, text: random() }, { kind: "human", id: "ada" });
+    expect((await call("/boards/b4/checkpoint", HUMAN, { method: "POST", body: big.encode() as BodyInit })).status).toBe(200);
+    await expect(enter("b4", HUMAN)).rejects.toThrow();
+    expect((await call("/boards/b4", HUMAN)).status).toBe(200);
+  }, 120_000);
 });

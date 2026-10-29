@@ -195,9 +195,12 @@ at the same time keep the last write. The board list shows the first 100 boards.
   the `blob:` ref for a shape. A busy database or bucket answers 503: try again.
 - Live rooms (`agentic-canvas/live-worker`, on `agentic-realtime`). One Durable Object holds one
   board. A token may carry `"role": "viewer"`: a viewer reads and cannot write. `GET /boards/:id/ws`
-  opens a room, `GET /me` says who a token is, `GET /boards/:id/state` and
-  `POST /boards/:id/checkpoint` seed a room from the stored board and save it back, as a merge. A save
-  checks author stamps: a client cannot put another author on its work.
+  opens a room, `GET /me` says who a token is. The Worker seeds a room from the stored board when a client
+  joins, and saves the room to the stored board before it serves any board read or write. A raw WebSocket
+  client needs no seed and no save call. A room that no request reaches stays unsaved in the Store until the
+  next request, and it is safe in the room's own storage. `GET /boards/:id/state` and
+  `POST /boards/:id/checkpoint` still work for a client that saves by hand. Every save checks author stamps:
+  a client cannot put another author on its work. A stored board over 1,000,000 bytes cannot seed a room: a live join answers 422 for it.
 - The SDK joins a room: `import { LiveBoard, LiveService } from "agentic-canvas/live"`. The CLI and the MCP
   server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
   `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.

@@ -1,5 +1,4 @@
 import { SyncClient, type Peer } from "agentic-realtime/client";
-import * as Y from "yjs";
 import { Board, CanvasError, type ErrorCode } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
 import { principalSchema, type Principal } from "./core/principal.js";
@@ -86,26 +85,16 @@ export class LiveBoard {
   static async join(options: LiveOptions): Promise<LiveBoard> {
     const me = await whoAmI(options.server, options.token);
     const id = encodeURIComponent(options.board);
-    // Read the stored board first: it tells a missing board from a failed connection, and the room starts from it.
+    // Read the stored board first: it tells a missing board from a failed connection. The server seeds the room from it.
     const stored = await call(options.server, options.token, `/boards/${id}/state`);
     if (!stored.ok) throw await refusal(stored, "could not read the stored board");
-    const state = new Uint8Array(await stored.arrayBuffer());
+    await stored.body?.cancel();
     const url = new URL(`${base(options.server)}/boards/${id}/ws`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     let client: SyncClient;
     try {
       client = await SyncClient.connect({ url: url.toString(), headers: { authorization: `Bearer ${options.token}` }, presence: { name: options.name ?? me.actor.id }, reconnect: options.reconnect });
     } catch (error) {
-      throw unreachable(error);
-    }
-    try {
-      Y.applyUpdate(client.doc, state);
-      await client.flush();
-      // A room drops a viewer's seed, and that is no refusal of an edit. An editor's refused seed is an error.
-      if (me.role === "editor" && client.denied.length > 0) throw new CanvasError("FORBIDDEN", `the room refused the stored board: ${client.denied[0]}`);
-    } catch (error) {
-      // Never leave the client open: with reconnect it would retry the seed for ever.
-      await client.disconnect();
       throw unreachable(error);
     }
     return new LiveBoard(new Board(client.doc), me, client, options.board, options, client.denied.length);

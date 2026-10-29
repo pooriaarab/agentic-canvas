@@ -18,6 +18,8 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(text);
 }
 
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
+
 const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
 /** The store refuses some ids, and its error text holds the id. Refuse them first, with a fixed message. */
@@ -127,8 +129,21 @@ export class CanvasService {
     return this.store.transaction(async (tx) => (await this.load(tx.get(COLLECTION, id), id)).encode());
   }
 
+  /** What the stored board has that a room with state `room` lacks, as a Yjs update, or null when the room has all of it. */
+  async missingFrom(id: string, room?: Uint8Array): Promise<Uint8Array | null> {
+    boardKey(id);
+    const known = new Y.Doc();
+    if (room) Y.applyUpdate(known, room);
+    const diff = await this.store.transaction(async (tx) => Y.encodeStateAsUpdate((await this.load(tx.get(COLLECTION, id), id)).doc, Y.encodeStateVector(known)));
+    // The diff always holds the whole delete set, so a board with deletes is never two bytes. It has nothing new when it changes nothing.
+    const before = Y.encodeStateAsUpdate(known);
+    Y.applyUpdate(known, diff);
+    return Y.decodeUpdate(diff).structs.length === 0 && sameBytes(before, Y.encodeStateAsUpdate(known)) ? null : diff;
+  }
+
   /**
-   * Merge a live room's state into the stored board. `authors` are the principals the room saw send updates.
+   * Merge a live room's state into the stored board. `authors` are the principals the room saw send updates. A null
+   * `actor` trusts only them: the Worker saves a room that way, with nobody present to vouch.
    * An element stamped by anyone else is deleted, and a changed author is put back (see `Board.restamp`),
    * so a client that writes raw Yjs cannot put another author on its work. Broken entries are repaired and
    * a board past the element cap is refused. Returns the ids the checks fixed.
@@ -138,11 +153,11 @@ export class CanvasService {
    * authors for good, so a client may stamp an element with the name of anyone who once sent an update in that room.
    * A client that adds a root type of its own makes every later save of that room fail, because the room keeps it.
    */
-  async checkpoint(id: string, update: Uint8Array, actor: Principal, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
+  async checkpoint(id: string, update: Uint8Array, actor: Principal | null, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
     boardKey(id);
-    const by = principalSchema.safeParse(actor);
-    if (!by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
-    const trusted = (who: Principal) => [by.data, ...authors].some((a) => a.kind === who.kind && a.id === who.id);
+    const by = actor === null ? null : principalSchema.safeParse(actor);
+    if (by && !by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
+    const trusted = (who: Principal) => [...(by?.success ? [by.data] : []), ...authors].some((a) => a.kind === who.kind && a.id === who.id);
     return this.store.transaction(async (tx) => {
       const prior = await this.load(tx.get(COLLECTION, id), id);
       const next = prior.clone();

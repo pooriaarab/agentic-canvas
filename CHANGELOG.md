@@ -6,6 +6,9 @@
   delete, pan, zoom, live presence, and a marker on agent items. The browser joins the live room with the token
   as a WebSocket sub-protocol (`agentic-canvas.bearer`), because a browser cannot set a header on a socket.
   Playwright E2E with axe checks run in `npm run ci:local`.
+- Seed a live room from the stored board and save the room back to the Store in the Worker. A raw WebSocket client needs
+  no seed or checkpoint call, and room edits reach the Store before the next board read or write. The token table
+  refuses the actor `canvas-room` of kind `agent`, which the Worker uses to seed. Needs `agentic-realtime` 0.3. The live client no longer seeds a room, so it needs a Worker of this version.
 - Add `GET /boards` and `PATCH /boards/:id/elements/:element`, the client methods `listBoards` and `update`, the CLI
   commands `list` and `update`, and the MCP tools `list_boards` and `update_element`. They work on the local store
   and in a live room. A list shows the first 100 boards.
