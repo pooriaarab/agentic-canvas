@@ -17,8 +17,11 @@ test.beforeAll(async () => {
   styles = (await build({ entryPoints: ["node_modules/agentic-design/dist/styles.css", "dist/ui.css"], bundle: true, write: false, outdir: "out", loader: { ".woff2": "dataurl" }, logLevel: "warning" })).outputFiles.map((f) => f.text).join("\n");
 });
 
+const sockets: string[] = [];
 async function host(browser: Browser, who: Record<string, string>, theme: "light" | "dark" = "light"): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
+  // From the first request on: a room opened at mount must not be missed.
+  page.on("websocket", (socket) => sockets.push(socket.url()));
   await page.route("https://host.test/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: script });
@@ -38,8 +41,6 @@ const axe = async (page: Page) => {
 
 test("a host page edits its own document, sees a peer's edit, calls no API, and keeps the document after unmount", async ({ browser }) => {
   const page = await host(browser, { kind: "agent_of_human", name: "Helper", id: "helper" });
-  const sockets: string[] = [];
-  page.on("websocket", (socket) => sockets.push(socket.url()));
   await page.getByRole("button", { name: "Add rectangle" }).click();
   await expect.poll(() => page.evaluate(() => (window as never as { hostElements(): { type: string; author: { id: string; kind: string } }[] }).hostElements())).toMatchObject([{ type: "rect", author: { kind: "agent_of_human", id: "helper" } }]);
   await page.evaluate(() => (window as never as { peerAdd(i: string, t: string): void }).peerAdd("p1", "From a peer"));

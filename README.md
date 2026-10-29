@@ -307,6 +307,8 @@ const board = mount(element, {
 - Each element the UI creates or edits is stamped with the principal's `id` and `kind`. A delete has no stamp. The `id` follows the identity rule of the
   SDK (letters, digits, `.`, `_`, `-`). An agent kind marks its elements as machine-made. A refused write shows a message
   and leaves the document alone. The server does not check these writes: your app and its room decide who may write.
+- In host mode `boardId` only keys the view. The UI shows the one board that the document holds (its `elements` and `meta` maps), so keep one board in each document.
+- A document pushed past the element cap (10,000) can no longer be read. The UI keeps the last board it drew, and your app should stop a peer from writing that far.
 - `client` or `room` together with `host` throws a `TypeError`, so a board never half-writes to a server. (`BoardEditor` shows an alert for these, as it does for a bad principal.) Give presence in `host.presence`.
 - The principal's `id` (default: `name`) must pass the identity rule, so a display name with a space needs an explicit `id`. A bad one throws a `TypeError` at mount.
 - The UI redraws only for changes in the document's `elements` and `meta` maps. Other data in the same document is left alone.
