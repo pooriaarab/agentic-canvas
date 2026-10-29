@@ -26,7 +26,7 @@ const tokens = JSON.stringify({
   [VIEWER]: { actor: "eve", kind: "human", role: "viewer" },
   [BAD_ROLE]: { actor: "x", kind: "human", role: "owner" },
 });
-const OPEN = [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_REGION:unknown"];
+const OPEN = [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_UNSAFE_STATIC_TOKENS:1", "CANVAS_REGION:unknown"];
 const persistTo = mkdtempSync(join(tmpdir(), "agentic-canvas-room-"));
 let worker: RunningWorker | undefined;
 const clients: SyncClient[] = [];

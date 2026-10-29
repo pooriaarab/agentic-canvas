@@ -125,12 +125,34 @@ no CI secret is used:
 ```sh
 npm ci && npm run build
 WRANGLER_SEND_METRICS=false CLOUDFLARE_API_TOKEN=... npx wrangler deploy -c wrangler.demo.jsonc
-npx wrangler secret put CANVAS_API_TOKENS -c wrangler.demo.jsonc   # only to set or rotate tokens
+npx wrangler secret put CANVAS_API_TOKENS -c wrangler.demo.jsonc   # only to set or rotate the demo tokens
 ```
 
-`wrangler.demo.jsonc` holds the config. The tokens are a Worker secret and are not in the repo. To run your
+`wrangler.demo.jsonc` holds the config. The demo is a throwaway: it turns on the dev fallback (see "Auth") and
+signs in with a static token list. The tokens are a Worker secret and are not in the repo. To run your
 own copy, create a D1 database and an R2 bucket (both in the EU), put their names and id in a copy of that
 file, and deploy it the same way.
+
+## Auth
+
+The Worker signs requests in with `agentic-identity` (`agentic-identity/http`). A bearer key, or an access
+token, is a credential in the same Store as the boards (D1). It names a principal, and the principal's scopes
+set the role:
+
+- `canvas:write` (or `*:admin`) is an editor.
+- `canvas:read` is a viewer. A viewer reads and cannot change a board, over HTTP or in a live room.
+- A principal with neither scope, an unknown, expired, or revoked credential, or a revoked parent in the
+  delegation chain, gets 401.
+
+Make principals and credentials in the database of the Worker with `agentic-identity` (its Worker, or
+`issueCredential` from its SDK). The author kind of every write is the kind of the principal.
+A browser sends its credential as the WebSocket sub-protocol `agentic-canvas.bearer.<token in base64url>`.
+
+**Dev fallback.** `CANVAS_API_TOKENS` is a static list of tokens, as JSON: `{ "<token>": { "actor": "ada", "kind": "human", "role": "viewer" } }`.
+It is read only when `CANVAS_UNSAFE_STATIC_TOKENS=1` is set too. Then it adds to the identity credentials: a
+token that is not a credential is looked up in the list. A static token reaches every board and cannot be
+revoked without a new deploy, so use it for local work and throwaway demos only. If `CANVAS_API_TOKENS` is set
+and the switch is not, every API request gets 503 `NOT_CONFIGURED`, so a deploy never trusts the list by accident.
 
 ## UI
 
@@ -146,12 +168,13 @@ npm ci
 npm run build                      # writes the UI to ui-dist/
 cat > .dev.vars <<'EOF2'
 CANVAS_REGION=unknown
+CANVAS_UNSAFE_STATIC_TOKENS=1
 CANVAS_API_TOKENS={"ada-token-0123456789-0123456789-0123456789":{"actor":"ada","kind":"human"}}
 EOF2
 WRANGLER_SEND_METRICS=false npx wrangler dev
 ```
 
-Open the address that wrangler prints and paste the token. A token has 32 characters or more. Its
+`CANVAS_UNSAFE_STATIC_TOKENS=1` turns on the dev fallback: see "Auth". Open the address that wrangler prints and paste the token. A static token has 32 characters or more. Its
 grant sets the name, the kind (a person or an agent), and the role. A `viewer` token reads and
 cannot change a board. The token stays in the tab's session storage.
 
@@ -239,8 +262,8 @@ at the same time keep the last write. The board list shows the first 100 boards.
 - A CLI over a local file store. Several processes can write at once.
 - An MCP server (stdio) over the same service as the CLI.
 - A Worker (`agentic-canvas/worker`) under `/api/v1/canvas`. Boards live in D1 and images in R2
-  (EU jurisdiction), through the shared `Store` and `Blobs` ports. Set `CANVAS_API_TOKENS`
-  (a JSON map of token to `{ actor, kind }`, tokens of 32 characters or more) and `CANVAS_REGION`.
+  (EU jurisdiction), through the shared `Store` and `Blobs` ports. Set `CANVAS_REGION`. Callers sign in with
+  `agentic-identity` credentials (see "Auth" below). `CANVAS_API_TOKENS` is a dev fallback only.
   Routes: `POST /boards`, `GET /boards/:id`, `DELETE /boards/:id`, `GET /boards/:id/svg`, `POST /boards/:id/shapes`,
   `/connectors`, `/flow`, `/move`, `GET /boards`, `PATCH /boards/:id/elements/:element`, `DELETE /boards/:id/elements/:element`, `POST /images`,
   `GET /images/:id`. An editor may delete a board. The Worker also erases its live room. An image is stored under the SHA-256 of its bytes, and the reply gives
@@ -351,8 +374,7 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 ## Limits
 
 - Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.5.
-  It does not use the sharing API yet. Its editor and viewer tokens are a separate table in
-  `CANVAS_API_TOKENS`. It has no board delete or erase. When it adopts sharing, grants are keyed
+  It does not use the sharing API yet: every principal with `canvas:write` reaches every board. It has no board delete or erase. When it adopts sharing, grants are keyed
   on kind and id, and a delete calls `deleteResource`.
 - A board holds at most 10,000 elements. A flow holds at most 500 nodes and 2,000
   edges.

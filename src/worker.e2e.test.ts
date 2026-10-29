@@ -29,7 +29,7 @@ const tokens = JSON.stringify({
   [NO_KIND]: { actor: "x" },
   [SHORT]: { actor: "s", kind: "human" },
 });
-const OPEN = [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_REGION:unknown", "CANVAS_MAX_IMAGE_BYTES:2000"];
+const OPEN = [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_UNSAFE_STATIC_TOKENS:1", "CANVAS_REGION:unknown", "CANVAS_MAX_IMAGE_BYTES:2000"];
 const persistTo = mkdtempSync(join(tmpdir(), "agentic-canvas-worker-"));
 let running: RunningWorker[] = [];
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
@@ -157,8 +157,8 @@ describe("two Workers on one D1 database and one R2 bucket", () => {
 
 // The handler itself, with the environment a bad deploy would give it.
 describe.each([
-  ["no database", { IMAGES: {}, CANVAS_REGION: "eu", CANVAS_API_TOKENS: tokens }],
-  ["no bucket", { DB: {}, CANVAS_REGION: "eu", CANVAS_API_TOKENS: tokens }],
+  ["no database", { IMAGES: {}, CANVAS_REGION: "eu", CANVAS_UNSAFE_STATIC_TOKENS: "1", CANVAS_API_TOKENS: tokens }],
+  ["no bucket", { DB: {}, CANVAS_REGION: "eu", CANVAS_UNSAFE_STATIC_TOKENS: "1", CANVAS_API_TOKENS: tokens }],
 ])("a Worker with %s", (_name, env) => {
   test("answers 503 and touches nothing", async () => {
     const res = await worker.fetch(new Request("http://x/api/v1/canvas/boards/b1", { headers: { authorization: `Bearer ${HUMAN}` } }), env as never, undefined);
