@@ -1,0 +1,2 @@
+/* Page rules for the app shell. They are not in the embeddable styles. */
+html, body, #root { height: 100%; margin: 0; }

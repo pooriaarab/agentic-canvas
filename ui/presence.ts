@@ -2,7 +2,6 @@
 // after each save a client raises `rev` in its presence, and every other client then reads the board again.
 import { SyncClient, type Peer } from "agentic-realtime/client";
 import type { PresenceEntry } from "agentic-design/react";
-import { API } from "./api";
 
 const WS_PROTOCOL = "agentic-canvas.bearer";
 const b64url = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -30,8 +29,15 @@ export function toEntry(peer: Peer): PresenceEntry {
   return { id: String(peer.clientId), name: peer.name, kind: peer.machine ? "agent" : "person" };
 }
 
-export function joinRoom(options: { board: string; token: string; name: string; onPeers: (peers: PresenceEntry[]) => void; onChange: () => void; onStatus: (connected: boolean) => void }): Room {
-  const url = new URL(`${API}/boards/${encodeURIComponent(options.board)}/ws`, window.location.href);
+export interface RoomOptions {
+  /** The API root, for example `https://canvas.example.com/api/v1/canvas`. */
+  baseUrl: string;
+  /** The bearer token for the room. */
+  token: string;
+}
+
+export function joinRoom(options: { board: string; baseUrl: string; token: string; name: string; onPeers: (peers: PresenceEntry[]) => void; onChange: () => void; onStatus: (connected: boolean) => void }): Room {
+  const url = new URL(`${options.baseUrl.replace(/\/+$/, "")}/boards/${encodeURIComponent(options.board)}/ws`, window.location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   BearerSocket.token = options.token;
   const seen = new Map<number, number>();
