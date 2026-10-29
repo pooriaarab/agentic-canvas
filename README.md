@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.6.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.7.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
@@ -376,8 +376,8 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 
 ## Limits
 
-- Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.5.
-  It does not use the sharing API yet: every principal with `canvas:write` reaches every board. It has no board delete or erase. When it adopts sharing, grants are keyed
+- Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.6.
+  It does not use the sharing API yet: every principal with `canvas:write` reaches every board. When it adopts sharing, grants are keyed
   on kind and id, and a delete calls `deleteResource`.
 - A board holds at most 10,000 elements. A flow holds at most 500 nodes and 2,000
   edges.
