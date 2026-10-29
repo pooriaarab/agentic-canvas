@@ -240,13 +240,13 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | `VERSION`, `BRAND` | The package version. `BRAND` holds the command name, the description and the version that the CLI and the MCP server show. |
 | `Board`, `CanvasElement` (type), `Shape` (type), `Connector` (type), `Group` (type), `Endpoint` (type), `ShapeType` (type) | The board model. `Board` holds the elements. Each element records its `author`, which never changes, and its `editedBy`. |
 | `SHAPE_TYPES` | The shape kinds: `rect`, `ellipse`, `diamond`, `text`, `sticky`, `frame` and `image`. |
-| `MAX_ELEMENTS`, `MAX_TEXT` | The limits: 10,000 elements on a board, and 10,000 characters in one text. |
+| `MAX_ELEMENTS`, `MAX_TEXT` | The limits: 10,000 elements on a board, and 10,000 UTF-16 code units in one text. |
 | `CanvasError`, `ErrorCode` (type) | The error that the board throws, with a `code` such as `INVALID`, `NOT_FOUND` or `LIMIT`. |
-| `parseFlow(source)`, `layoutFlow(graph)`, `drawFlow` | Read the flow text and lay it out. `layoutFlow` returns placements with the top-left at (0, 0). |
+| `parseFlow(source)`, `layoutFlow(graph)`, `drawFlow(board, source, actor, options?)` | `parseFlow` reads the flow text. `layoutFlow` returns placements with the top-left at (0, 0). `drawFlow` draws the flow onto the board as the actor. |
 | `MAX_FLOW_NODES`, `MAX_FLOW_EDGES` | The flow limits: 500 nodes and 2000 edges. |
 | `FlowGraph` (type), `FlowNode` (type), `FlowEdge` (type), `Placement` (type), `DrawOptions` (type) | Types for a flow and its layout. |
 | `readBoard`, `BoardData` (type), `NodeData` (type), `EdgeData` (type) | Read a board as plain data. |
-| `toSvg`, `svgToPng` | Export a board as SVG, or as PNG through Chromium. |
+| `toSvg(board)`, `svgToPng(svg)` | `toSvg` returns the board as SVG. `svgToPng` turns an SVG string into PNG through Chromium. |
 | `PRINCIPAL_KINDS`, `PrincipalKind` (type), `Principal` (type), `principalSchema`, `isMachineMade` | The principal kinds, the schema of a principal, and the rule that marks machine-made kinds. |
 | `operatorActor(env?)`, `ActorConfigError` | Read the actor from `CANVAS_ACTOR` as `<kind>:<id>`. It throws `ActorConfigError` when the value is missing or bad. |
 | `CanvasService` | The board operations that the CLI, the MCP server and the Worker share. It takes a `Store`. |
