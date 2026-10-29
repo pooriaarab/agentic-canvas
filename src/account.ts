@@ -58,6 +58,7 @@ const plain = (value: unknown): Json[] => JSON.parse(JSON.stringify(value)) as J
 
 function check(subject: Principal, deps: CanvasAccountDeps): void {
   if (typeof deps?.store?.query !== "function") throw new CanvasError("INVALID", "canvasAccount needs deps.store");
+  if (deps.eraseRoom !== undefined && typeof deps.eraseRoom !== "function") throw new CanvasError("INVALID", "deps.eraseRoom must be a function");
   // Every principal kind may stamp an element or an audit entry, so every kind is a subject. A kind that holds no role has no grants.
   if (!principalSchema.safeParse(subject).success) throw new CanvasError("INVALID", "subject needs an id and a known kind");
 }
@@ -74,7 +75,7 @@ async function held(store: Store, subject: Principal): Promise<{ all: Held[]; so
     if (typeof id !== "string" || typeof role !== "string" || !(ROLES as readonly string[]).includes(role)) throw new CanvasError("INVALID", `grant "${grantId}" of the subject is damaged`);
     const resource = await store.get("resources", id);
     // A grant with no resource is what an erase that stopped half way leaves. A resource of another type is another app's.
-    if (resource !== null && resource.type !== RESOURCE_TYPE) continue;
+    if (resource === null ? !isBoardId(id) : resource.type !== RESOURCE_TYPE) continue;
     all.push({ grantId, resourceId: id, role });
     if (resource === null || role !== "owner") continue;
     const owners = await rows(store, "grants", { resourceId: id, role: "owner" });
@@ -149,19 +150,25 @@ export const canvasAccount: CanvasAccount = {
     const service = new CanvasService(store);
     const out: Record<CanvasCollection, Json[]> = { boards: [], grants: [], invites: [], authored_elements: [], edited_elements: [], titles: [], audit: [] };
     const mine = await held(store, subject);
-    for (const g of mine.all) {
-      out.grants.push(...plain([{ resourceId: g.resourceId, subjectKind: subject.kind, subjectId: subject.id, role: g.role }]));
-      if (!mine.sole.has(g.resourceId)) continue;
-      // A grant with no board behind it (an erase that stopped half way) has nothing to export.
-      const board = await service.read(g.resourceId).catch((e: unknown) => (e instanceof CanvasError && e.code === "NOT_FOUND" ? null : Promise.reject(e)));
-      if (board) out.boards.push(...plain([board]));
-    }
+    const raw = new Map<string, number>();
     for await (const { id, board } of boards(store)) {
-      if (mine.sole.has(id)) continue;
+      if (mine.sole.has(id)) {
+        raw.set(id, board.entryCount);
+        continue;
+      }
       const found = board.stampedBy(subject);
       out.authored_elements.push(...plain(found.authored.map((element) => ({ boardId: id, element }))));
       out.edited_elements.push(...plain(found.edited.map((elementId) => ({ boardId: id, elementId }))));
       if (found.titleBy) out.titles.push(...plain([{ boardId: id, title: board.title }]));
+    }
+    for (const g of mine.all) {
+      out.grants.push(...plain([{ resourceId: g.resourceId, subjectKind: subject.kind, subjectId: subject.id, role: g.role }]));
+      // A grant with no board behind it (an erase that stopped half way) has nothing to export.
+      if (!mine.sole.has(g.resourceId) || !raw.has(g.resourceId)) continue;
+      const board = await service.read(g.resourceId);
+      // The read leaves out entries that fail the checks. Erase deletes the whole board, so do not export less than it holds.
+      if (board.nodes.length + board.edges.length + board.groups.length !== raw.get(g.resourceId)) throw new CanvasError("INVALID", `board "${g.resourceId}" holds damaged entries: an owner repairs it first`);
+      out.boards.push(...plain([board]));
     }
     // Invites hold `createdBy` as an id with no kind: ids are unique across kinds in the identity store. The fields are listed, so a new one is not exported by chance.
     for (const { id, data } of await invitesOf(store, subject)) {
@@ -180,6 +187,13 @@ export const canvasAccount: CanvasAccount = {
     const ctx: PrincipalContext = { principalId: subject.id, kind: subject.kind, chain: [{ id: subject.id, kind: subject.kind }], scopes: [`${RESOURCE_TYPE}:admin`] } as PrincipalContext;
     const mine = await held(store, subject);
 
+    // Scan every board before the first change: a board that does not decode stops the call with nothing done.
+    const stamped: string[] = [];
+    for await (const { id, board } of boards(store)) {
+      if (mine.sole.has(id)) continue;
+      const found = board.stampedBy(subject);
+      if (found.authored.length > 0 || found.edited.length > 0 || found.titleBy) stamped.push(id);
+    }
     // Audit first: the entries of a board that goes below are removed with it, and a repeat after a failure still finds the rest.
     for (const { id, data } of await auditOf(store, subject)) {
       await store.put("audit", id, scrub(data, subject) as Record<string, Json>);
@@ -199,11 +213,6 @@ export const canvasAccount: CanvasAccount = {
         throw e;
       });
       total.boards += 1;
-    }
-    const stamped: string[] = [];
-    for await (const { id, board } of boards(store)) {
-      const found = board.stampedBy(subject);
-      if (found.authored.length > 0 || found.edited.length > 0 || found.titleBy) stamped.push(id);
     }
     for (const id of stamped) {
       await deps.eraseRoom?.(id);

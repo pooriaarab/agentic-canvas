@@ -430,6 +430,11 @@ export class Board {
     return plan.map(([memberId]) => memberId);
   }
 
+  /** How many entries the board stores, valid or not. */
+  get entryCount(): number {
+    return this.elements.size;
+  }
+
   /**
    * The raw stored elements that `who` made (`author`) and the ids of those that `who` last edited but did not make.
    * It reads entries as they are, with no element checks, so a damaged entry still shows. Account export uses it.

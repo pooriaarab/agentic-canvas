@@ -18,7 +18,9 @@ import { afterAll, describe, expect, test } from "vitest";
 import { CanvasAccess } from "./access.js";
 import { canvasAccount } from "./account.js";
 import type { Principal } from "./core/principal.js";
-import { CanvasService } from "./service.js";
+import * as Y from "yjs";
+import { Board } from "./core/board.js";
+import { CanvasService, toBase64 } from "./service.js";
 import { openLocalStore } from "./store-file.js";
 
 const root = mkdtempSync(join(tmpdir(), "canvas-account-"));
@@ -144,6 +146,9 @@ describe("canvasAccount", () => {
     const { store } = await setup();
     await store.transaction((tx) => tx.put("boards", "bad", { update: "!!not base64!!" }));
     await expect(canvasAccount.eraseAccount(bob, { store })).rejects.toMatchObject({ code: "INVALID" });
+    // Nothing was changed before the stop.
+    expect(await store.get("resources", "bobs")).not.toBeNull();
+    expect((await store.query("invites", { where: { createdBy: "bob" }, limit: 5 })).items).toHaveLength(1);
   });
 
   test("erases a delegated agent, whose stamps are on boards it does not own", async () => {
@@ -182,5 +187,16 @@ describe("canvasAccount", () => {
     expect((await canvasAccount.exportAccount(ada, { store })).invites).toHaveLength(2);
     expect(await canvasAccount.eraseAccount(ada, { store })).toMatchObject({ invites: 2 });
     expect(await store.get("invites", "docinv")).not.toBeNull();
+  });
+
+  test("refuses an export that would leave out damaged entries of a board it then erases, and a bad eraseRoom", async () => {
+    const { store } = await setup();
+    const doc = new Board();
+    doc.addShape({ id: "ok", type: "rect", x: 0, y: 0 }, ada);
+    // A shape with no size fails the element checks, so a read drops it.
+    doc.doc.getMap<Y.Map<unknown>>("elements").set("bad", new Y.Map<unknown>([["id", "bad"], ["type", "rect"]]));
+    await store.transaction((tx) => tx.put("boards", "mine", { update: toBase64(doc.encode()) }));
+    await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    await expect(canvasAccount.eraseAccount(ada, { store, eraseRoom: "x" as never })).rejects.toMatchObject({ code: "INVALID" });
   });
 });
