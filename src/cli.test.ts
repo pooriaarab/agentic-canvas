@@ -37,7 +37,7 @@ let n = 0;
 const dirs: string[] = [];
 /** A board doc as the file store keeps it, or null. */
 const stored = (dir: string, id: string): unknown =>
-  (JSON.parse(readFileSync(join(dir, STORE_FILE), "utf8")) as { boards?: Record<string, unknown> }).boards?.[id] ?? null;
+  (JSON.parse(readFileSync(join(dir, STORE_FILE), "utf8")) as { collections?: { boards?: Record<string, unknown> } }).collections?.boards?.[id] ?? null;
 const fresh = () => {
   const dir = join(root, `store${n++}`);
   dirs.push(dir);
@@ -358,7 +358,7 @@ describe("owner repair", () => {
       bytes = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
     }
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, STORE_FILE), JSON.stringify({ boards: { [id]: { update: bytes } } }));
+    writeFileSync(join(dir, STORE_FILE), JSON.stringify({ format: 1, collections: { boards: { [id]: { update: bytes } } } }));
     return file(dir, id);
   }
   test("an agent cannot repair, and the file is unchanged", async () => {

@@ -359,9 +359,8 @@ old author stays on its elements. Only new writes follow the strict rule.
 
 | Name | What it is |
 |---|---|
-| `createFileStore(path, options?)`, `openLocalStore(dir)` | A store on one JSON file, or on `canvas.json` in a directory. |
-| `FileStoreError` | The error that the store throws. Its `code` is `LOCKED` or `DAMAGED`. |
-| `FileStoreOptions` (type) | `lockTimeoutMs` (default 10000) and `staleAfterMs` (default 30000), plus the adapter options. |
+| `createFileStore(path, options?)`, `openLocalStore(dir)` | A store on one JSON file, or on `canvas.json` in a directory. It is the file store of agentic-identity. |
+| `FileStoreOptions` (type) | The adapter options. |
 | `STORE_FILE` | The file name that `openLocalStore` uses, `canvas.json`. |
 
 ### `agentic-canvas/live`
