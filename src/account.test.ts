@@ -7,7 +7,7 @@
 //  4. A connector of someone else is left hidden on a deleted shape, or a member of a deleted group is lost.
 //  5. An invite email is in the export, or an invite of the subject stays after the erase.
 //  6. An audit entry keeps the subject's id, or loses its kind (so it stops saying that a machine acted).
-//  7. The export holds another person's data, or the erase touches it.
+//  7. The export holds another person's data (except the elements of others on a board the subject owns alone), or the erase touches it.
 //  8. A delegated agent (agent_of_human) is refused, though it stamps elements. The stand-in for an erased id names a real principal.
 //  9. A damaged grant of the subject is skipped, so the erase reports done and leaves it. A grant with no resource stays.
 // 10. A second erase counts anything, or the erase fails when a board has no room to erase.
@@ -248,5 +248,15 @@ describe("canvasAccount", () => {
     await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
     expect((await service.read("mine")).id).toBe("mine");
     expect((await store.query("invites", { where: { createdBy: "ada" }, limit: 5 })).items).toHaveLength(2);
+  });
+
+  test("stops on a damaged audit entry or a damaged co-owner grant", async () => {
+    const { store } = await setup();
+    await store.transaction((tx) => tx.put("grants", "mine:odd", { resourceId: "mine", subjectId: "bob", role: "owner" }));
+    await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    await store.transaction((tx) => tx.delete("grants", "mine:odd"));
+    await store.transaction((tx) => tx.put("audit", "oldrow", { id: "oldrow", at: 1, action: "read", resourceId: "mine", principalId: "ada", outcome: "allowed" }));
+    await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
   });
 });

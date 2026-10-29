@@ -2,9 +2,9 @@
 // storage layout. The shape is provisional, as in other agentic packages: it is the contract that a later
 // `agentic-identity` release adds to `agentic-identity/account` as `AccountPackage`. The `AccountApp` of 0.9.0 is a
 // different contract (files for a zip), and this does not fit it.
-import { createSharing, ROLES, type Json, type PrincipalContext, type Store } from "agentic-identity";
+import { createSharing, ROLES, SUBJECT_KINDS, type Json, type PrincipalContext, type Store } from "agentic-identity";
 import { Board, CanvasError } from "./core/board.js";
-import { principalSchema, type Principal } from "./core/principal.js";
+import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/principal.js";
 import { RESOURCE_TYPE } from "./access.js";
 import { fromBase64, isBoardId, toBase64 } from "./service.js";
 
@@ -81,6 +81,8 @@ async function held(store: Store, subject: Principal): Promise<{ all: Held[]; so
     all.push({ grantId, resourceId: id, role });
     if (resource === null || role !== "owner") continue;
     const owners = await rows(store, "grants", { resourceId: id, role: "owner" });
+    // A co-owner grant that we cannot read could be the last other owner. Stop: the final grant delete would skip the last-owner check.
+    if (owners.some((o) => typeof o.data.subjectId !== "string" || !(SUBJECT_KINDS as readonly unknown[]).includes(o.data.subjectKind))) throw new CanvasError("INVALID", `an owner grant on board "${id}" is damaged`);
     if (owners.every((o) => o.data.subjectKind === subject.kind && o.data.subjectId === subject.id)) sole.add(id);
   }
   return { all, sole };
@@ -117,6 +119,8 @@ async function auditOf(store: Store, subject: Principal): Promise<{ id: string; 
   const out: { id: string; data: Record<string, unknown> }[] = [];
   for (const row of found.values()) {
     const { principalId, principalKind, chain, rootId, resourceId, targetKind, targetId } = row.data;
+    // A row that names the subject by id, with a kind we do not know, may be the subject's: stop and do not report an erase that left it. A link visitor is "anonymous".
+    if (principalId === subject.id && principalKind !== "anonymous" && !(PRINCIPAL_KINDS as readonly unknown[]).includes(principalKind)) throw new CanvasError("INVALID", `audit entry "${row.id}" is damaged`);
     const mine = isSubject({ kind: principalKind, id: principalId }, subject) || (Array.isArray(chain) ? isSubject(chain[0], subject) : rootId === subject.id) || isSubject({ kind: targetKind, id: targetId }, subject);
     if (!mine || typeof resourceId !== "string" || !isBoardId(resourceId)) continue;
     // A deleted board has no sharing record, and its entries still count. Only a record of another type clears a row.

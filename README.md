@@ -246,15 +246,17 @@ The export is plain JSON in the collections `boards`, `grants`, `invites`, `auth
 - On any other board, the subject's grant and invites go. The elements it made are deleted. A connector of someone else that was bound to one of them goes too, and no count or export lists it. The members of a deleted group move to its parent. The editor of an element it only edited becomes `(erased)`, and a title it set is cleared.
 - Its audit entries (it acted, it roots the chain, or a grant named it) stay with the id set to `(erased)`. The kinds stay, so an entry still says if a machine acted.
 - A second erase counts zero. Stop writes first: a write between export and erase is erased and not exported.
-- The erase reads every stored board to find the subject's elements, before it changes anything. It stops with `INVALID` on a board that does not decode, on a damaged grant of the subject, on a damaged invite of the subject, on a board with child resources, and on an owner grant that the sharing records do not accept.
+- The erase reads every stored board to find the subject's elements, before it changes data. It stops with `INVALID` on a board that does not decode, on a damaged grant of the subject, on a damaged invite of the subject, on a board with child resources, on an owner grant that the sharing records do not accept, on a damaged co-owner grant, and on an audit entry that names the subject with an unknown kind. The checks may add audit entries about the subject: the erase scrubs them.
 - Live rooms: give `saveRoom(boardId)`, which saves the room to the Store as the Worker does before a read. Without it, edits that no request has saved yet are not seen, and the reset below drops them. Give `eraseRoom(boardId)` too: the erase calls it for every board that it changes or deletes, so the room opens again from the Store.
-- `boards` holds each stored entry as it is, with full images and groups.
+- `boards` holds each stored entry as it is, with full images and groups. It includes the elements that others made on the board.
+- Run the canvas erase before the identity erase of the person: the identity erase removes the grants that this erase finds boards by.
 - The subject is any principal kind, for example `agent_of_human`: call once for each principal. The id follows the strict identity rule: an old board that has an id from the older, looser rule cannot be named.
 - Known gaps:
   - Invites and audit entries name a principal by id with no kind, so `human:ada` and `agent:ada` share them. Do not give two principals one id.
   - An audit entry where the subject is only a middle step of the chain is not found.
   - An invite that someone else made for the subject's email or handle stays. The package cannot map a principal to an address.
   - Image bytes in the image store have no uploader record, so they are not exported or erased. Only the `blob:` key in an element is.
+  - A deleted element leaves its id in the stored Yjs history. Its content is gone, and an id that the caller chose can stay in the stored bytes.
   - A connector of someone else that the subject edited, and that goes with a deleted shape, is in `edited_elements` of the export and not in its erase count.
 - The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
 
