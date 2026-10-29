@@ -10,7 +10,7 @@ import type { Realtime } from "agentic-realtime";
 import { afterAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { Board } from "./core/board.js";
-import { pull, seed, SEEDER, writers } from "./room-sync.js";
+import { handWriters, pull, seed, SEEDER, writers } from "./room-sync.js";
 import { CanvasService } from "./service.js";
 import { openLocalStore } from "./store-file.js";
 
@@ -151,5 +151,28 @@ describe("writers", () => {
     expect(who({ client: 2, clock: 0 })).toBeUndefined();
     expect(who({ client: 1, clock: 22 })).toEqual(ada);
     expect(who({ client: 1, clock: 25 })).toBeUndefined();
+  });
+
+  test("overlapping ranges name the first claim, and a log marked lost or with drops still answers", async () => {
+    const bot = { kind: "agent_of_human", id: "helper", machine: true } as const;
+    const ranges = [{ client: 1, clock: 0, length: 100, author: 0, at: 1 }, { client: 1, clock: 5, length: 5, author: 1, at: 9 }];
+    const live = { attribution: async () => ({ authors: [{ ...ada, machine: false }, bot], ranges, dropped: 3, lost: true }) } as unknown as Realtime;
+    const who = await writers(live, "b");
+    expect(who({ client: 1, clock: 7 })).toEqual(ada);
+    expect(who({ client: 1, clock: 50 })).toEqual(ada);
+  });
+
+  test("a hand save counts the log only for items the room holds", async () => {
+    const service = await open();
+    const room = Board.decode(await service.state("b"));
+    room.addShape({ id: "held", type: "rect", x: 0, y: 0 }, ada);
+    const { live } = fakeRoom(room.doc);
+    const poster = { kind: "agent_of_human", id: "helper" } as const;
+    const who = await handWriters(live, "b", poster);
+    const client = room.doc.clientID;
+    // An item inside the room's state is Ada's, from the log. One past it, under the same client id, is the poster's.
+    expect(who({ client, clock: 0 })).toEqual(ada);
+    expect(who({ client, clock: 1e6 })).toEqual(poster);
+    expect(who({ client: 424242, clock: 0 })).toEqual(poster);
   });
 });

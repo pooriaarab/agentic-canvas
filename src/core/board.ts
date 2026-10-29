@@ -260,16 +260,20 @@ export class Board {
    * `writer` says who sent the update that holds a Yjs item, or undefined when it does not know. Where it knows, it
    * decides: a new element gets its creator as author and editor, and an old one gets the sender of its changes as editor.
    * A client cannot claim another principal, and an agent cannot pass as a person. A new item that the log lacks has no
-   * sender: it is deleted or undone, unless `fallback` names who posted it. Only an old item falls back to `trusted`.
+   * sender: it is deleted or undone. Only an old item falls back to `trusted`. A hand save names its poster as the sender
+   * of every item that the room does not hold, in `writer`.
    */
-  restamp(prior: Board, trusted: (who: Principal) => boolean, writer?: (item: { client: number; clock: number }) => Principal | undefined, fallback?: Principal): string[] {
+  restamp(prior: Board, trusted: (who: Principal) => boolean, writer?: (item: { client: number; clock: number }) => Principal | undefined): string[] {
     const before = new Map(prior.allStored().map((e) => [e.id, e]));
     const body = ({ author: _a, editedBy: _e, ...rest }: CanvasElement) => JSON.stringify(rest);
     const fixed: string[] = [];
     // An item is new when the stored board has not seen it. Only a new item can hold something the client made up.
     const isNew = (item: { client: number; clock: number }) => item.clock >= Y.getState(prior.doc.store, item.client);
-    // The log names the sender. For an item it lacks, `fallback` (the one who posts a hand save) is the only possible sender.
-    const who = (item: { client: number; clock: number }) => writer?.(item) ?? (isNew(item) ? fallback : undefined);
+    const who = (item: { client: number; clock: number }) => writer?.(item);
+    // Several writers: a machine among them shows, so an agent's change is not hidden behind a later edit by a person.
+    // Otherwise the editor stamp's own writer wins when it is one of them, so the last editor of two people is kept.
+    const pick = (writers: Principal[], stamped?: Principal) =>
+      writers.find((w) => isMachineMade(w.kind)) ?? (stamped && (writers.length === 0 || writers.some((w) => samePrincipal(w, stamped))) ? stamped : writers[0]);
     this.doc.transact(() => {
       for (const el of writer ? this.allStored() : []) {
         const entry = this.elements.get(el.id)!;
@@ -279,11 +283,13 @@ export class Board {
           return item && !item.deleted ? who(item.id) : undefined;
         };
         if (!was) {
-          // A new element has one creator. If no one can be named, the element cannot be checked, and it goes.
+          // A new element has one creator, and its author. Its editor is whoever wrote its keys. If any writer is unknown,
+          // the element cannot be checked, and it goes.
           const creator = entry._item ? who(entry._item.id) : undefined;
-          if (!creator) this.elements.delete(el.id);
+          const writers = [...entry.keys()].filter((k) => k !== "author" && k !== "editedBy").map(by);
+          if (!creator || writers.some((w) => !w)) this.elements.delete(el.id);
           else {
-            const editor = by("editedBy") ?? creator;
+            const editor = pick(writers as Principal[], by("editedBy")) ?? creator;
             if (samePrincipal(el.author, creator) && samePrincipal(el.editedBy, editor)) continue;
             entry.set("author", creator);
             entry.set("editedBy", editor);
@@ -304,8 +310,7 @@ export class Board {
           fixed.push(el.id);
           continue;
         }
-        // Several writers: a machine among them shows, so an agent's change is not hidden behind a later edit by a person.
-        const editor = (writers as Principal[]).find((w) => isMachineMade(w.kind)) ?? writers[0] ?? stamped;
+        const editor = pick(writers as Principal[], stamped);
         if (editor && !samePrincipal(el.editedBy, editor)) {
           entry.set("editedBy", editor);
           fixed.push(el.id);
@@ -343,10 +348,11 @@ export class Board {
       if (writer) {
         const found = this.meta._map.get("title");
         const titleItem = found?.deleted ? undefined : found;
-        const priorTitle = prior.meta.has("title");
-        const titleWriter = titleItem && isNew(titleItem.id) ? who(titleItem.id) : undefined;
-        // A deleted title leaves no item and no writer, and a new one with no writer cannot be checked.
-        titleBroken = (!titleItem && priorTitle) || (titleItem !== undefined && isNew(titleItem.id) && !titleWriter);
+        const byItem = this.meta._map.get("titleBy");
+        // Each of the two keys that was written in this window names its writer. A deleted title leaves no item and no writer.
+        const written = [titleItem, byItem?.deleted ? undefined : byItem].filter((item) => item !== undefined && isNew(item.id)).map((item) => who(item!.id));
+        titleBroken = (!titleItem && prior.meta.has("title")) || written.some((w) => !w);
+        const titleWriter = titleBroken ? undefined : pick(written as Principal[]);
         if (titleWriter && this.titleBy && !samePrincipal(this.titleBy, titleWriter)) {
           this.meta.set("titleBy", titleWriter);
           fixed.push("title");

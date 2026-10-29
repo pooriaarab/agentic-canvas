@@ -91,7 +91,14 @@ export async function writers(live: Realtime, id: string): Promise<Writer> {
   if (!log) throw new CanvasError("UNAVAILABLE", "the room has no log of who sent its updates");
   const ranges = new Map<number, typeof log.ranges>();
   for (const range of log.ranges) ranges.set(range.client, [...(ranges.get(range.client) ?? []), range]);
-  for (const list of ranges.values()) list.sort((a, b) => a.clock - b.clock);
+  // Per client: ranges by start, and the furthest end so far, so a lookup stops once no earlier range can reach the clock.
+  const reach = new Map<number, number[]>();
+  for (const [client, list] of ranges) {
+    list.sort((a, b) => a.clock - b.clock);
+    reach.set(client, list.map((r) => r.clock + r.length));
+    const ends = reach.get(client)!;
+    for (let i = 1; i < ends.length; i++) ends[i] = Math.max(ends[i]!, ends[i - 1]!);
+  }
   return ({ client, clock }) => {
     const list = ranges.get(client) ?? [];
     // The last range that starts at or before the clock, found by bisection.
@@ -102,10 +109,27 @@ export async function writers(live: Realtime, id: string): Promise<Writer> {
       if (list[mid]!.clock <= clock) low = mid + 1;
       else high = mid;
     }
-    const range = list[low - 1];
-    const who = range && clock < range.clock + range.length ? log.authors[range.author] : undefined;
+    // Ranges may overlap, because the room logs a resent item again. The first claim, the oldest one, is the true sender.
+    let first: (typeof list)[number] | undefined;
+    for (let i = low - 1; i >= 0 && reach.get(client)![i]! > clock; i--) {
+      const r = list[i]!;
+      if (clock < r.clock + r.length && (!first || r.at < first.at)) first = r;
+    }
+    const who = first ? log.authors[first.author] : undefined;
     return who && !same(who, SEEDER) ? { id: who.id, kind: who.kind } : undefined;
   };
+}
+
+/**
+ * Writers for a hand save. The log names a sender by Yjs id, and an id says nothing about the content behind it: a client
+ * can post its own content under the ids of someone else's logged range. So the log counts only for items that the room
+ * holds. The poster is the sender of every other item.
+ */
+export async function handWriters(live: Realtime, id: string, poster: Principal): Promise<Writer> {
+  const log = await writers(live, id);
+  const state = await roomState(live, id);
+  const held = state ? Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)) : new Map<number, number>();
+  return (item) => (item.clock < (held.get(item.client) ?? 0) ? log(item) : poster);
 }
 
 /** The principals the room saw send updates, except the seeder, which is no author. Only these may stamp a save. */
@@ -121,21 +145,23 @@ function remember(id: string, mark: string): void {
   saved.set(id, mark);
 }
 
-/** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. */
-export async function pull(live: Realtime, service: CanvasService, id: string): Promise<void> {
+/** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. Returns the ids the checks fixed. */
+export async function pull(live: Realtime, service: CanvasService, id: string): Promise<string[]> {
   const { updates, compactions } = await live.meta(id);
   const mark = `${updates}:${compactions}`;
-  if (saved.get(id) === mark) return;
+  if (saved.get(id) === mark) return [];
   const state = await roomState(live, id);
-  if (!state) return;
+  if (!state) return [];
+  let result: { fixed: string[] };
   try {
-    await service.checkpoint(id, state, null, await roomAuthors(live, id), await writers(live, id));
+    result = await service.checkpoint(id, state, null, await roomAuthors(live, id), await writers(live, id));
   } catch (error) {
     // A room that fails its checks fails them again until it changes. A busy store is another matter: try that again.
     if (error instanceof CanvasError && error.code !== "UNAVAILABLE") remember(id, mark);
     throw error;
   }
   remember(id, mark);
+  return result.fixed;
 }
 
 /** Give the room what the Store has and it lacks. A room that is not behind gets nothing. It is read as it is, saved or not. Throws when the room cannot take it. */

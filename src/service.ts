@@ -154,7 +154,7 @@ export class CanvasService {
    * Limits: the save corrects the stored board only. The room keeps what its clients wrote, so a client that sees
    * a non-empty `fixed` must join again, or its later edits are lost at the next save. The room remembers its
    * authors for good, so an OLD item that the log does not name (a seeded one, or a range the log dropped) keeps the older rule: its
-   * stamp may name anyone who once sent an update in that room. A NEW item with no writer is deleted or undone, unless `actor` posted it.
+   * stamp may name anyone who once sent an update in that room. A NEW item with no writer is deleted or undone.
    * A client that adds a root type of its own makes every later save of that room fail, because the room keeps it.
    */
   async checkpoint(id: string, update: Uint8Array, actor: Principal | null, authors: Principal[] = [], writer?: Writer): Promise<{ elements: number; fixed: string[] }> {
@@ -175,7 +175,7 @@ export class CanvasService {
       // A root type other than the two a board uses would be stored and sent back to every client for ever.
       const strange = [...next.doc.share.keys()].filter((key) => key !== "elements" && key !== "meta");
       if (strange.length > 0) throw new CanvasError("INVALID", "the update holds data that is not part of a board");
-      const fixed = new Set([...next.restamp(prior, trusted, writer, by?.success ? by.data : undefined), ...next.repair()]);
+      const fixed = new Set([...next.restamp(prior, trusted, writer), ...next.repair()]);
       const saved = next.encode();
       if (saved.length > MAX_LIVE_BYTES) throw new CanvasError("LIMIT", `the board would hold over ${MAX_LIVE_BYTES} bytes`);
       await tx.put(COLLECTION, id, { update: toBase64(saved) });

@@ -120,6 +120,16 @@ describe("live room", () => {
     const posted = await call("/boards/b1/checkpoint", BOT, { method: "POST", body: ghost.encode() as BodyInit });
     expect((await posted.json()).fixed).toEqual(["ghost"]);
     expect((await (await call("/boards/b1", HUMAN)).json()).nodes.find((n: { id: string }) => n.id === "ghost")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
+    // A hand save that reuses the Yjs ids of Ada's unsaved edit cannot put its own content under her name: the room's items come first.
+    const before = Y.encodeStateAsUpdate(ada.doc);
+    adaBoard.addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "ada text" }, { kind: "human", id: "ada" });
+    await ada.flush();
+    const twin = new Y.Doc();
+    Y.applyUpdate(twin, before);
+    twin.clientID = ada.doc.clientID;
+    new Board(twin).addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "bot text" }, { kind: "human", id: "ada" });
+    expect((await save(BOT, twin)).status).toBe(200);
+    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.find((n: { id: string }) => n.id === "s4")).toMatchObject({ text: "ada text", machineMade: false });
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
 

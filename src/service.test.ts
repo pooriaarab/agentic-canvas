@@ -302,19 +302,61 @@ describe("stamps from the writer", () => {
     expect((await service.read("b")).nodes.map((n) => n.id)).toEqual(["s1"]);
   });
 
-  test("a hand save stamps content the room never had with the one who posts it", async () => {
-    const service = await open();
-    const update = await room(service, (b) => raw(b, "fake", fake));
-    const result = await service.checkpoint("b", update, bot, [ada, bot], () => undefined);
-    expect(result.fixed).toEqual(["fake"]);
-    expect((await service.read("b")).nodes.find((n) => n.id === "fake")).toMatchObject({ author: bot, editedBy: bot, machineMade: true });
-  });
-
   test("a hand save does not restamp what the store already had", async () => {
     const service = await open();
     const update = await room(service, () => undefined);
     expect((await service.checkpoint("b", update, bot, [ada, bot], () => undefined)).fixed).toEqual([]);
     expect((await service.read("b")).nodes[0]).toMatchObject({ author: ada, editedBy: ada });
+  });
+
+  test("an agent's edit of a new element shows, though the stamp names the person who made it", async () => {
+    const service = await open();
+    const update = await room(service, (b) => {
+      b.doc.clientID = 888;
+      b.addShape({ id: "n1", type: "rect", x: 0, y: 0 }, ada);
+      b.doc.clientID = BOT_CLIENT;
+      b.doc.getMap<Y.Map<unknown>>("elements").get("n1")!.set("text", "agent text");
+    });
+    const who = ({ client }: { client: number }) => (client === BOT_CLIENT ? bot : client === 888 ? ada : undefined);
+    await service.checkpoint("b", update, null, [ada, bot], who);
+    expect((await service.read("b")).nodes.find((n) => n.id === "n1")).toMatchObject({ text: "agent text", author: ada, editedBy: bot, lastEditMachineMade: true });
+  });
+
+  test("a new element with a key that no one can be named for is deleted", async () => {
+    const service = await open();
+    const update = await room(service, (b) => {
+      b.doc.clientID = 888;
+      b.addShape({ id: "n1", type: "rect", x: 0, y: 0 }, ada);
+      b.doc.clientID = 999;
+      b.doc.getMap<Y.Map<unknown>>("elements").get("n1")!.set("text", "who wrote this");
+    });
+    const who = ({ client }: { client: number }) => (client === 888 ? ada : undefined);
+    expect((await service.checkpoint("b", update, null, [ada], who)).fixed).toEqual(["n1"]);
+    expect((await service.read("b")).nodes.map((n) => n.id)).toEqual(["s1"]);
+  });
+
+  test("the last editor of two people keeps the stamp", async () => {
+    const service = await open();
+    const bob: Principal = { kind: "human", id: "bob" };
+    const update = await room(service, (b) => {
+      b.doc.clientID = 111;
+      b.update("s1", { text: "bob one" }, bob);
+      b.doc.clientID = 222;
+      b.update("s1", { x: 5 }, ada);
+      b.doc.clientID = 111;
+      b.update("s1", { y: 7 }, bob);
+    });
+    const who = ({ client }: { client: number }) => (client === 111 ? bob : client === 222 ? ada : undefined);
+    expect((await service.checkpoint("b", update, null, [ada, bob], who)).fixed).toEqual([]);
+    expect((await service.read("b")).nodes[0]).toMatchObject({ text: "bob one", x: 5, y: 7, editedBy: bob });
+  });
+
+  test("a title author changed alone to a person in the room is stamped with its sender", async () => {
+    const service = await open();
+    await service.checkpoint("b", await room(service, (b) => b.setTitle("Agent title", bot)), null, [ada, bot], writer);
+    const update = await room(service, (b) => b.doc.getMap("meta").set("titleBy", ada));
+    expect((await service.checkpoint("b", update, null, [ada, bot], writer)).fixed).toEqual(["title"]);
+    expect(Board.decode(await service.state("b")).doc.getMap("meta").get("titleBy")).toEqual(bot);
   });
 
   test("a deleted key leaves no item: the old editor does not keep the credit, and the change is undone if no one stamped it", async () => {
