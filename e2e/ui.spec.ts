@@ -16,7 +16,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "../src/client.js";
 import { TOKENS } from "./playwright.config.js";
 
-const API = "http://127.0.0.1:18900/api/v1/canvas";
+const API = `http://127.0.0.1:${process.env.E2E_PORT ?? 18900}/api/v1/canvas`;
 // The committed set in docs/ui is refreshed on purpose (UPDATE_SCREENSHOTS=1). A normal run writes to test-results.
 const shots = (name: string) => `${process.env.UPDATE_SCREENSHOTS ? "docs/ui" : "test-results/screens"}/${name}.png`;
 /** Edits are saved when the page says so. A reload before that would drop the last ones. */
