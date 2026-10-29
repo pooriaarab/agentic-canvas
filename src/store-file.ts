@@ -63,6 +63,8 @@ export function createFileStore(path: string, options: FileStoreOptions = {}): S
   const lockPath = `${path}.lock`;
   const timeoutMs = options.lockTimeoutMs ?? 10_000;
   const staleAfterMs = options.staleAfterMs ?? 30_000;
+  // NaN or a string would make the lock wait never end, so refuse them here.
+  for (const ms of [timeoutMs, staleAfterMs]) if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) throw new TypeError("lockTimeoutMs and staleAfterMs must be finite numbers of 0 or more");
   let queue: Promise<unknown> = Promise.resolve();
 
   async function load(): Promise<Snapshot> {

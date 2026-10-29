@@ -129,6 +129,9 @@ the direction. Lines that start with `#` or `//` are comments.
   A lock whose owner is gone, or that is older than 30 seconds, is taken over. A lock that
   cannot be read counts as held: the call then waits 10 seconds and fails with `UNAVAILABLE`.
   Remove the lock by hand if no process runs.
+- Node 22 or newer is needed. `agentic-canvas/file-store` exports `createFileStore(path)` and
+  `openLocalStore(dir)`. A writer that is paused for more than 30 seconds can lose its lock
+  and then still write.
 - Boards from the old layout, `boards/<id>.json`, are not read. Package version 0.0.0 had no
   release, so there is no import.
 - Delete leaves no audit record yet. The caller logs it.
