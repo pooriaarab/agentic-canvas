@@ -258,5 +258,15 @@ describe("canvasAccount", () => {
     await store.transaction((tx) => tx.put("audit", "oldrow", { id: "oldrow", at: 1, action: "read", resourceId: "mine", principalId: "ada", outcome: "allowed" }));
     await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
     await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    await store.transaction((tx) => tx.delete("audit", "oldrow"));
+    // A row that names the subject only as the root of the chain, or as the target, with a kind we do not know.
+    for (const row of <Record<string, any>[]>[
+      { principalId: "bob", principalKind: "human", chain: [{ id: "ada", kind: "x" }], rootId: "ada" },
+      { principalId: "bob", principalKind: "human", chain: [{ id: "bob", kind: "human" }], rootId: "bob", targetKind: "hmn", targetId: "ada" },
+    ]) {
+      await store.transaction((tx) => tx.put("audit", "oddrow", { id: "oddrow", at: 1, action: "grant.set", resourceId: "mine", outcome: "allowed", ...row }));
+      await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+      await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    }
   });
 });

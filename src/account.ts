@@ -117,15 +117,22 @@ async function auditOf(store: Store, subject: Principal): Promise<{ id: string; 
   const found = new Map<string, { id: string; data: Record<string, unknown> }>();
   for (const field of ["principalId", "rootId", "targetId"]) for (const row of await rows(store, "audit", { [field]: subject.id })) found.set(row.id, row);
   const out: { id: string; data: Record<string, unknown> }[] = [];
+  const known = (kind: unknown, extra: string[] = []) => (PRINCIPAL_KINDS as readonly unknown[]).includes(kind) || extra.includes(kind as string);
   for (const row of found.values()) {
     const { principalId, principalKind, chain, rootId, resourceId, targetKind, targetId } = row.data;
-    // A row that names the subject by id, with a kind we do not know, may be the subject's: stop and do not report an erase that left it. A link visitor is "anonymous".
-    if (principalId === subject.id && principalKind !== "anonymous" && !(PRINCIPAL_KINDS as readonly unknown[]).includes(principalKind)) throw new CanvasError("INVALID", `audit entry "${row.id}" is damaged`);
-    const mine = isSubject({ kind: principalKind, id: principalId }, subject) || (Array.isArray(chain) ? isSubject(chain[0], subject) : rootId === subject.id) || isSubject({ kind: targetKind, id: targetId }, subject);
-    if (!mine || typeof resourceId !== "string" || !isBoardId(resourceId)) continue;
+    if (typeof resourceId !== "string" || !isBoardId(resourceId)) continue;
     // A deleted board has no sharing record, and its entries still count. Only a record of another type clears a row.
     const resource = await store.get("resources", resourceId);
-    if (resource === null || resource.type === RESOURCE_TYPE) out.push(row);
+    if (resource !== null && resource.type !== RESOURCE_TYPE) continue;
+    // A row that names the subject by id, with a kind we do not know, may be the subject's: stop and do not report an erase that left it.
+    // A link visitor is "anonymous". A target that is no principal is an invite, a link, a person, or an app.
+    const first = Array.isArray(chain) ? (chain[0] as { id?: unknown; kind?: unknown } | null) : null;
+    const damaged =
+      (principalId === subject.id && !known(principalKind, ["anonymous"])) ||
+      (targetId === subject.id && !known(targetKind, ["invite", "link", "person", "app", "key"])) ||
+      ((first?.id === subject.id || (first === null && rootId === subject.id)) && !known(first?.kind));
+    if (damaged) throw new CanvasError("INVALID", `audit entry "${row.id}" is damaged`);
+    if (isSubject({ kind: principalKind, id: principalId }, subject) || isSubject(first, subject) || isSubject({ kind: targetKind, id: targetId }, subject)) out.push(row);
   }
   return out;
 }
@@ -176,10 +183,9 @@ export const canvasAccount: CanvasAccount = {
     }
     for (const g of mine.all) {
       out.grants.push(...plain([{ resourceId: g.resourceId, subjectKind: subject.kind, subjectId: subject.id, role: g.role }]));
-      // A grant with no board behind it (an erase that stopped half way) has nothing to export.
-      const board = owned.get(g.resourceId);
-      if (board) out.boards.push(board);
     }
+    // A sole board once, whatever the number of grant rows. A grant with no board behind it (an erase that stopped half way) has nothing to export.
+    for (const id of mine.sole) if (owned.has(id)) out.boards.push(owned.get(id)!);
     // Invites hold `createdBy` as an id with no kind: ids are unique across kinds in the identity store. The fields are listed, so a new one is not exported by chance.
     for (const { id, data } of await invitesOf(store, subject)) {
       const { resourceId, role, expiresAt, acceptedAt, revokedAt } = data;
@@ -245,7 +251,7 @@ export const canvasAccount: CanvasAccount = {
         await tx.put("boards", id, { update: toBase64(board.encode()) });
         return counts;
       });
-      // A client that joined between the first erase and the write loaded the old state. Erase the room again.
+      // Reset the room, so it opens again from the erased state.
       await deps.eraseRoom?.(id);
       if (!done) continue;
       total.authored_elements += done.authored;
