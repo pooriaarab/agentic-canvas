@@ -18,6 +18,8 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(text);
 }
 
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
+
 const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
 /** The store refuses some ids, and its error text holds the id. Refuse them first, with a fixed message. */
@@ -133,8 +135,10 @@ export class CanvasService {
     const known = new Y.Doc();
     if (room) Y.applyUpdate(known, room);
     const diff = await this.store.transaction(async (tx) => Y.encodeStateAsUpdate((await this.load(tx.get(COLLECTION, id), id)).doc, Y.encodeStateVector(known)));
-    // The empty update is two bytes: no structs and an empty delete set.
-    return diff.length <= 2 ? null : diff;
+    // The diff always holds the whole delete set, so a board with deletes is never two bytes. It has nothing new when it changes nothing.
+    const before = Y.encodeStateAsUpdate(known);
+    Y.applyUpdate(known, diff);
+    return Y.decodeUpdate(diff).structs.length === 0 && sameBytes(before, Y.encodeStateAsUpdate(known)) ? null : diff;
   }
 
   /**

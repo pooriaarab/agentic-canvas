@@ -4,7 +4,7 @@ import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } fro
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
 import { principalSchema, type Principal } from "./core/principal.js";
-import { pull, seed, SEEDER } from "./room-sync.js";
+import { pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
 import { CanvasService, MAX_LIVE_BYTES } from "./service.js";
 
 export interface WorkerEnv {
@@ -206,13 +206,10 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const id = c.req.param("id")!;
     await c.var.service.assertExists(id);
     const live = options.live(c.env);
-    let state: Uint8Array | null = null;
-    try {
-      state = await pull(live, c.var.service, id);
-    } catch (error) {
-      console.error(JSON.stringify({ level: "error", op: "save-room", message: loggable(error) }));
-    }
-    if (seeding) await seed(live, c.var.service, id, state);
+    // A step that fails is logged and skipped: a bad room must not lock the board, or keep a client out of it.
+    const attempt = (op: string, run: () => Promise<void>) => run().catch((error: unknown) => console.error(JSON.stringify({ level: "error", op, message: loggable(error) })));
+    await attempt("save-room", () => pull(live, c.var.service, id));
+    if (seeding) await attempt("seed-room", () => seed(live, c.var.service, id));
   };
   const sync = async (c: Context<App>, next: () => Promise<void>) => {
     if (!/\/(ws|checkpoint)$/.test(new URL(c.req.url).pathname)) await saveRoom(c, false);
@@ -248,7 +245,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     await c.var.service.assertExists(id);
     const update = await readLimited(c.req.raw, MAX_LIVE_BYTES);
     if (!update) throw new CanvasError("INVALID", `the update must be at most ${MAX_LIVE_BYTES} bytes`);
-    const authors = (await options.live(c.env).meta(id)).contributors.map(({ id: who, kind }) => ({ id: who, kind }));
+    const authors = await roomAuthors(options.live(c.env), id);
     return c.json(await c.var.service.checkpoint(id, update, c.var.actor, authors));
   });
 

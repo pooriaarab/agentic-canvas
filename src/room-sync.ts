@@ -15,6 +15,7 @@ import type { CanvasService } from "./service.js";
 export const SEEDER: Principal = { kind: "agent", id: "canvas-room" };
 const MAX_SEED_BYTES = 1_000_000;
 const SYNC = 0;
+const AUTH = 2;
 const SYNC_STEP2 = 1;
 const SYNC_UPDATE = 2;
 
@@ -63,8 +64,8 @@ async function send(live: Realtime, id: string, update: Uint8Array): Promise<voi
     const fail = (error: CanvasError) => (clearTimeout(timer), reject(error));
     socket.addEventListener("message", ({ data }) => {
       const bytes = new Uint8Array(data as ArrayBuffer);
-      // The room answers a state query only after it handled the update before it. Type 4 is "permission denied".
-      if (bytes[0] === 4) fail(new CanvasError("UNAVAILABLE", "the room refused the stored board"));
+      // The room answers a state query only after it handled the update before it. Type 2 is auth, and its first body byte 0 means "permission denied".
+      if (bytes[0] === AUTH && bytes[1] === 0) fail(new CanvasError("UNAVAILABLE", "the room refused the stored board"));
       else if (bytes[0] === SYNC && bytes[1] === SYNC_STEP2) (clearTimeout(timer), resolve());
     });
     socket.addEventListener("close", () => fail(new CanvasError("UNAVAILABLE", "the room closed while it was seeded")));
@@ -73,17 +74,28 @@ async function send(live: Realtime, id: string, update: Uint8Array): Promise<voi
   }).finally(() => socket.close(1000, "seeded"));
 }
 
-/** Save the room to the Store. The room's own contributors are the only authors it trusts. Returns the room state. */
-export async function pull(live: Realtime, service: CanvasService, id: string): Promise<Uint8Array | null> {
-  const state = await roomState(live, id);
-  if (!state) return null;
-  const authors = (await live.meta(id)).contributors.filter((c) => !same(c, SEEDER)).map(({ id: who, kind }) => ({ id: who, kind }));
-  await service.checkpoint(id, state, null, authors);
-  return state;
+/** The principals the room saw send updates, except the seeder, which is no author. Only these may stamp a save. */
+export async function roomAuthors(live: Realtime, id: string): Promise<Principal[]> {
+  return (await live.meta(id)).contributors.filter((c) => !same(c, SEEDER)).map(({ id: who, kind }) => ({ id: who, kind }));
 }
 
-/** Give the room what the Store has and it lacks. A room that is not behind gets nothing. */
-export async function seed(live: Realtime, service: CanvasService, id: string, room: Uint8Array | null): Promise<void> {
-  const missing = await service.missingFrom(id, room ?? undefined);
+/** Where the last save of each room stood: its update and compaction counts. A room that has not moved needs no save. */
+const saved = new Map<string, string>();
+
+/** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. */
+export async function pull(live: Realtime, service: CanvasService, id: string): Promise<void> {
+  const { updates, compactions } = await live.meta(id);
+  const mark = `${updates}:${compactions}`;
+  if (saved.get(id) === mark) return;
+  const state = await roomState(live, id);
+  if (!state) return;
+  await service.checkpoint(id, state, null, await roomAuthors(live, id));
+  if (saved.size > 500) saved.clear();
+  saved.set(id, mark);
+}
+
+/** Give the room what the Store has and it lacks. A room that is not behind gets nothing. It is read as it is, saved or not. */
+export async function seed(live: Realtime, service: CanvasService, id: string): Promise<void> {
+  const missing = await service.missingFrom(id, (await roomState(live, id)) ?? undefined);
   if (missing) await send(live, id, missing);
 }

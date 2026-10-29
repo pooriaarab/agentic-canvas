@@ -135,11 +135,32 @@ describe("live room", () => {
     new Board(bob.doc).addShape({ id: "live2", type: "rect", x: 1, y: 1 }, { kind: "agent_of_human", id: "helper" });
     await bob.flush();
 
+    // The seeder is in the room's log, but it is no author: a hand save refuses a stamp that names it.
+    bob.doc.getMap<Y.Map<unknown>>("elements").set("seedfake", new Y.Map(Object.entries({ id: "seedfake", type: "rect", x: 0, y: 0, w: 5, h: 5, text: "", z: 9, author: { kind: "agent", id: "canvas-room" }, editedBy: { kind: "agent", id: "canvas-room" } })));
+    await bob.flush();
+    const forgedSave = await call("/boards/b2/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bob.doc) as BodyInit });
+    expect((await forgedSave.json()).fixed).toContain("seedfake");
+
     // Restart: the edit that only the room has (live2) is in the Store after the next request, and the seeder never shows as an author.
     await worker.stop();
     worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
     const after = await (await call("/boards/b2", HUMAN)).json();
     expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2"]);
+    expect(JSON.stringify(after)).not.toContain("canvas-room");
     expect(after.nodes.find((n: { id: string }) => n.id === "live2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
   }, 180_000);
+
+  test("a room that fails its checks does not lock the board or keep a client out", async () => {
+    worker = await startWorker({ port: PORT + 2, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b3" }) });
+    const bot = await enter("b3", BOT);
+    // A root type of its own makes every save of this room fail, and the room keeps it.
+    bot.doc.getMap("junk").set("a", 1);
+    await bot.flush();
+    await call("/boards/b3/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: "rest1", type: "rect", x: 0, y: 0 }) });
+    expect((await call("/boards/b3", HUMAN)).status).toBe(200);
+    const late = await enter("b3", HUMAN);
+    await until(() => new Board(late.doc).get("rest1") !== undefined, "the room to take the HTTP change");
+    expect(worker.log()).toContain("save-room");
+  }, 120_000);
 });
