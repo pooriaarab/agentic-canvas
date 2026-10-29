@@ -1,38 +1,38 @@
 /* Every rule is nested under .cv-root, so the styles do not reach the host page. */
 .cv-root {
-  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--ad-space-4); flex-wrap: wrap; }
-  .failure { border: 1px solid var(--ad-color-danger); border-radius: var(--ad-radius-md); padding: var(--ad-space-4); color: var(--ad-color-danger-text); background: var(--ad-color-danger-subtle); display: grid; gap: var(--ad-space-3); justify-items: start; }
-  .note { color: var(--ad-color-text-muted); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--agd-space-4); flex-wrap: wrap; }
+  .failure { border: 1px solid var(--agd-color-danger); border-radius: var(--agd-radius-md); padding: var(--agd-space-4); color: var(--agd-color-danger-text); background: var(--agd-color-danger-subtle); display: grid; gap: var(--agd-space-3); justify-items: start; }
+  .note { color: var(--agd-color-text-muted); }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  .board { display: grid; gap: var(--ad-space-3); }
-  .stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 16rem; gap: var(--ad-space-3); height: 65vh; min-height: 22rem; }
+  .board { display: grid; gap: var(--agd-space-3); }
+  .stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 16rem; gap: var(--agd-space-3); height: 65vh; min-height: 22rem; }
   @media (max-width: 48rem) { .stage { grid-template-columns: 1fr; height: auto; } .canvas { height: 55vh; } }
-  .canvas { background: var(--ad-color-surface-sunken); border: 1px solid var(--ad-color-border); border-radius: var(--ad-radius-md); overflow: hidden; touch-action: none; min-height: 18rem; }
-  .canvas:focus-visible { outline: 3px solid var(--ad-color-focus); outline-offset: 2px; }
-  .canvas svg { display: block; cursor: grab; font-family: var(--ad-font-family-sans); font-size: 14px; }
+  .canvas { background: var(--agd-color-surface-sunken); border: 1px solid var(--agd-color-border); border-radius: var(--agd-radius-md); overflow: hidden; touch-action: none; min-height: 18rem; }
+  .canvas:focus-visible { outline: 3px solid var(--agd-color-focus); outline-offset: 2px; }
+  .canvas svg { display: block; cursor: grab; font-family: var(--agd-font-family-sans); font-size: 14px; }
   .item { outline: none; cursor: pointer; }
-  .shape { fill: var(--ad-color-surface-raised); stroke: var(--ad-color-border-strong); stroke-width: 1.5; }
+  .shape { fill: var(--agd-color-surface-raised); stroke: var(--agd-color-border-strong); stroke-width: 1.5; }
   .shape.text { fill: transparent; stroke: none; }
   .shape.frame, .shape.image { fill: none; stroke-dasharray: 6 4; pointer-events: visiblePainted; }
-  .shape.sticky { fill: var(--ad-color-warning-subtle); stroke: var(--ad-color-warning); }
-  .label { fill: var(--ad-color-text); pointer-events: none; }
-  .sticky-label { fill: var(--ad-color-warning-text); }
-  .edge { stroke: var(--ad-color-text-muted); stroke-width: 2; fill: none; pointer-events: none; }
+  .shape.sticky { fill: var(--agd-color-warning-subtle); stroke: var(--agd-color-warning); }
+  .label { fill: var(--agd-color-text); pointer-events: none; }
+  .sticky-label { fill: var(--agd-color-warning-text); }
+  .edge { stroke: var(--agd-color-text-muted); stroke-width: 2; fill: none; pointer-events: none; }
   .hit { stroke: transparent; stroke-width: 14; }
-  .arrowhead { fill: var(--ad-color-text-muted); }
-  .edge-text { fill: var(--ad-color-text); paint-order: stroke; stroke: var(--ad-color-surface-sunken); stroke-width: 4px; pointer-events: none; }
+  .arrowhead { fill: var(--agd-color-text-muted); }
+  .edge-text { fill: var(--agd-color-text); paint-order: stroke; stroke: var(--agd-color-surface-sunken); stroke-width: 4px; pointer-events: none; }
   .ring, .ring-line { fill: none; stroke: none; stroke-width: 3; pointer-events: none; }
-  .item.selected .ring, .item.selected .ring-line, .item:focus-visible .ring, .item:focus-visible .ring-line { stroke: var(--ad-color-focus); }
+  .item.selected .ring, .item.selected .ring-line, .item:focus-visible .ring, .item:focus-visible .ring-line { stroke: var(--agd-color-focus); }
   .item:focus-visible .ring, .item:focus-visible .ring-line { stroke-width: 4; }
-  .handle { fill: var(--ad-color-focus); stroke: var(--ad-color-bg); stroke-width: 2; cursor: nwse-resize; }
-  .agent-badge rect { fill: var(--ad-color-agent-subtle); stroke: var(--ad-color-agent); }
-  .agent-badge text { fill: var(--ad-color-agent-text); font-size: 11px; font-weight: 600; pointer-events: none; }
+  .handle { fill: var(--agd-color-focus); stroke: var(--agd-color-bg); stroke-width: 2; cursor: nwse-resize; }
+  .agent-badge rect { fill: var(--agd-color-agent-subtle); stroke: var(--agd-color-agent); }
+  .agent-badge text { fill: var(--agd-color-agent-text); font-size: 11px; font-weight: 600; pointer-events: none; }
   .empty-overlay { position: absolute; inset: 0 16rem 0 0; display: grid; place-items: center; pointer-events: none; }
   @media (max-width: 48rem) { .empty-overlay { inset: 0; bottom: auto; height: 55vh; } }
-  .inspector { border: 1px solid var(--ad-color-border); border-radius: var(--ad-radius-md); padding: var(--ad-space-3); background: var(--ad-color-surface); display: grid; gap: var(--ad-space-3); align-content: start; overflow: auto; }
-  .inspector h2 { margin: 0; font-size: var(--ad-font-size-lg); }
-  .inspector form { display: grid; gap: var(--ad-space-3); }
-  .inspector .by { margin: 0; color: var(--ad-color-text-muted); font-size: var(--ad-font-size-sm); }
-  .sizes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ad-space-2); }
+  .inspector { border: 1px solid var(--agd-color-border); border-radius: var(--agd-radius-md); padding: var(--agd-space-3); background: var(--agd-color-surface); display: grid; gap: var(--agd-space-3); align-content: start; overflow: auto; }
+  .inspector h2 { margin: 0; font-size: var(--agd-font-size-lg); }
+  .inspector form { display: grid; gap: var(--agd-space-3); }
+  .inspector .by { margin: 0; color: var(--agd-color-text-muted); font-size: var(--agd-font-size-sm); }
+  .sizes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--agd-space-2); }
 }
