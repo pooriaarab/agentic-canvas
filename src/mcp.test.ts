@@ -22,6 +22,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
+import { STORE_FILE } from "./store-file.js";
 
 const BIN = join(process.cwd(), "dist", "cli.js");
 const root = mkdtempSync(join(tmpdir(), "canvas-mcp-"));
@@ -173,8 +174,7 @@ describe("tools", () => {
     const client = await connect(dir);
     try {
       await call(client, "create_board", { id: "b" });
-      mkdirSync(join(dir, "boards"), { recursive: true });
-      writeFileSync(join(dir, "boards", "b.json"), "{not json");
+      writeFileSync(join(dir, STORE_FILE), "{not json");
       const r = await call(client, "read_board", { board: "b" });
       expect(r.error).toBe(true);
       expect(JSON.stringify(r.value)).not.toMatch(/\n\s+at /);

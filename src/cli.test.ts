@@ -23,17 +23,21 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { MAX_ELEMENTS } from "./core/board.js";
+import { STORE_FILE } from "./store-file.js";
 
 const BIN = join(process.cwd(), "dist", "cli.js");
 const root = mkdtempSync(join(tmpdir(), "canvas-e2e-"));
 let n = 0;
 const dirs: string[] = [];
+/** A board doc as the file store keeps it, or null. */
+const stored = (dir: string, id: string): unknown =>
+  (JSON.parse(readFileSync(join(dir, STORE_FILE), "utf8")) as { boards?: Record<string, unknown> }).boards?.[id] ?? null;
 const fresh = () => {
   const dir = join(root, `store${n++}`);
   dirs.push(dir);
@@ -108,8 +112,8 @@ describe("failures exit 1", () => {
       expect(r.code).toBe(1);
     }
     await cli(dir, ["new", "--id", "ok"], human);
-    copyFileSync(join(dir, "boards", "ok.json"), join(dir, "escape.json"));
     expect(await cli(dir, ["read", "../escape"])).toMatchObject({ code: 1, out: "" });
+    expect(await cli(dir, ["read", "__x__"])).toMatchObject({ code: 1, out: "" });
   });
   test("bad flow text leaves the board unchanged", async () => {
     const dir = fresh();
@@ -123,10 +127,10 @@ describe("failures exit 1", () => {
   test("a damaged stored file is a clean error", async () => {
     const dir = fresh();
     await cli(dir, ["new", "--id", "b"], human);
-    writeFileSync(join(dir, "boards", "b.json"), "{not json");
+    writeFileSync(join(dir, STORE_FILE), "{not json");
     const r = await cli(dir, ["read", "b"]);
     expect(r.code).toBe(1);
-    expect(r.err).toContain("damaged");
+    expect(r.err).toContain("not valid JSON");
     expect(r.err).not.toMatch(/\n\s+at /);
   });
 });
@@ -151,7 +155,7 @@ describe("actor", () => {
     expect(await nodeCount(dir)).toBe(0);
     const made = await cli(dir, ["new", "--id", "c"], env);
     expect(made.code).toBe(2);
-    expect(existsSync(join(dir, "boards", "c.json"))).toBe(false);
+    expect(stored(dir, "c")).toBeNull();
   });
   test("--actor does not exist: it cannot set a kind, human or other", async () => {
     const dir = fresh();
@@ -312,10 +316,10 @@ describe("png limits", () => {
 });
 
 describe("owner repair", () => {
-  const file = (dir: string, id: string) => join(dir, "boards", `${id}.json`);
+  const file = (dir: string, id: string) => stored(dir, id);
   let bytes: string | undefined;
   /** A peer past the cap. Writes the store file the way the service does. Built once: it is large. */
-  function overCap(dir: string, id: string): Buffer {
+  function overCap(dir: string, id: string): unknown {
     if (!bytes) {
       const doc = new Y.Doc();
       const elements = doc.getMap("elements");
@@ -327,9 +331,9 @@ describe("owner repair", () => {
       });
       bytes = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
     }
-    mkdirSync(join(dir, "boards"), { recursive: true });
-    writeFileSync(file(dir, id), JSON.stringify({ update: bytes }));
-    return readFileSync(file(dir, id));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, STORE_FILE), JSON.stringify({ boards: { [id]: { update: bytes } } }));
+    return file(dir, id);
   }
   test("an agent cannot repair, and the file is unchanged", async () => {
     const dir = fresh();
@@ -337,7 +341,7 @@ describe("owner repair", () => {
     const r = await cli(dir, ["repair", "big"], agent);
     expect([r.code, r.out]).toEqual([1, ""]);
     expect(r.err).toContain("FORBIDDEN");
-    expect(readFileSync(file(dir, "big"))).toEqual(before);
+    expect(file(dir, "big")).toEqual(before);
   }, 60_000);
   test("read says the board is past the cap, not that it is damaged", async () => {
     const dir = fresh();
@@ -353,7 +357,7 @@ describe("owner repair", () => {
     const r = await cli(dir, ["repair", "big"], human);
     expect(r.code).toBe(1);
     expect(r.err).toContain("LIMIT");
-    expect(readFileSync(file(dir, "big"))).toEqual(before);
+    expect(file(dir, "big")).toEqual(before);
   }, 60_000);
   test("dropping one element brings the board under the cap, and it reads again", async () => {
     const dir = fresh();
@@ -367,11 +371,11 @@ describe("owner repair", () => {
   test("a drop that names no element exits 1 and changes nothing", async () => {
     const dir = fresh();
     await cli(dir, ["new", "--id", "small"], human);
-    const before = readFileSync(file(dir, "small"));
+    const before = file(dir, "small");
     const r = await cli(dir, ["repair", "small", "--drop", "nope"], human);
     expect(r.code).toBe(1);
     expect(r.err).toContain("NOT_FOUND");
-    expect(readFileSync(file(dir, "small"))).toEqual(before);
+    expect(file(dir, "small")).toEqual(before);
   });
   test("repair on a healthy board fixes nothing", async () => {
     const dir = fresh();

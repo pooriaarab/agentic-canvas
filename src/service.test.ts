@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import type { Principal } from "./core/principal.js";
 import { CanvasService } from "./service.js";
-import { fileStore } from "./store.js";
+import { openLocalStore } from "./store-file.js";
 
 const root = mkdtempSync(join(tmpdir(), "canvas-service-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -21,7 +21,7 @@ describe("owner repair actor", () => {
     ["an empty id", { kind: "human", id: "" }],
     ["an extra field", { kind: "human", id: "ada", role: "owner" }],
   ])("%s is refused as INVALID", async (_name, actor) => {
-    const service = new CanvasService(fileStore(join(root, `s${n++}`)));
+    const service = new CanvasService(openLocalStore(join(root, `s${n++}`)));
     await service.create(human, { id: "b" });
     await expect(service.repair("b", actor as Principal)).rejects.toMatchObject({ code: "INVALID" });
   });
