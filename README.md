@@ -238,7 +238,7 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | Name | What it is |
 |---|---|
 | `VERSION`, `BRAND` | The package version. `BRAND` holds the command name, the description and the version that the CLI and the MCP server show. |
-| `Board`, `CanvasElement`, `Shape` (type), `Connector` (type), `Group` (type), `Endpoint` (type), `ShapeType` (type) | The board model. `Board` holds the elements. Each element records its `author`, which never changes, and its `editedBy`. |
+| `Board`, `CanvasElement` (type), `Shape` (type), `Connector` (type), `Group` (type), `Endpoint` (type), `ShapeType` (type) | The board model. `Board` holds the elements. Each element records its `author`, which never changes, and its `editedBy`. |
 | `SHAPE_TYPES` | The shape kinds: `rect`, `ellipse`, `diamond`, `text`, `sticky`, `frame` and `image`. |
 | `MAX_ELEMENTS`, `MAX_TEXT` | The limits: 10,000 elements on a board, and 10,000 characters in one text. |
 | `CanvasError`, `ErrorCode` (type) | The error that the board throws, with a `code` such as `INVALID`, `NOT_FOUND` or `LIMIT`. |
@@ -258,7 +258,7 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | Name | What it is |
 |---|---|
 | `createClient(options)`, `CanvasApiError` | The remote client. See Remote client above. |
-| `ClientOptions`, `CallOptions`, `CanvasClient`, `ShapeInput`, `ConnectorInput`, `ShapePatch`, `ConnectorPatch`, `ImageInfo`, `ApiErrorCode` | Types for the client. `ApiErrorCode` adds the client's own codes, such as `NETWORK`, to `ErrorCode`. |
+| `ClientOptions` (type), `CallOptions` (type), `CanvasClient` (type), `ShapeInput` (type), `ConnectorInput` (type), `ShapePatch` (type), `ConnectorPatch` (type), `ImageInfo` (type), `ApiErrorCode` (type) | Types for the client. `ApiErrorCode` adds the client's own codes, such as `NETWORK`, to `ErrorCode`. |
 
 ### `agentic-canvas/file-store`
 
@@ -273,8 +273,8 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 
 | Name | What it is |
 |---|---|
-| `LiveBoard.join(options)` | Join one board's live room. Read and write the board, then `leave`. |
-| `LiveService` | The CLI and MCP commands, run in a live room. Each call joins, runs one change as the token's actor, saves, and leaves. |
+| `LiveBoard.join(options)` | Join one board's live room. Read the board, change it, `save` to the stored board, then `leave`. |
+| `LiveService` | The CLI and MCP commands, run in a live room. A change joins the room, runs as the token's actor, saves, and leaves. `read` and `exportSvg` join and leave without a save. `create` and `list` call the HTTP API. |
 | `whoAmI(server, token)`, `Me` (type) | Ask the Worker who a token is. It returns the actor and the role. |
 | `LiveOptions` (type) | The server, the board id, the token, and the optional name and reconnect settings. |
 
@@ -284,7 +284,7 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 |---|---|
 | `createApp(options?)` | Make the Hono app for the Worker. Pass `live` to turn on the live-room socket. |
 | `default` | The Worker, without live rooms. |
-| `authenticate(request, env)` | Read a bearer token and return the actor and the role, or `null`. |
+| `authenticate(request, env)` | Read a bearer token from the `Authorization` header, or from a WebSocket sub-protocol. Return the actor and the role, or `null`. |
 | `sniffImage(bytes)` | Find the image type from the first bytes, or return `null`. The client's claim of a type is not trusted. |
 | `WS_PROTOCOL` | The sub-protocol name that carries a token on a WebSocket: `agentic-canvas.bearer`. |
 | `WorkerEnv` (type), `AppOptions` (type), `Role` (type) | Types for the Worker bindings, the app options and the role, `editor` or `viewer`. |
