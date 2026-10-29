@@ -1,5 +1,4 @@
 import { COLOR_PATTERN, IMAGE_PATTERN, MAX_ELEMENTS, CanvasError, SHAPE_TYPES, type Board, type Connector, type Endpoint, type Shape } from "./board.js";
-import { PRINCIPAL_KINDS } from "./principal.js";
 
 // Pure and deterministic: the same board gives the same bytes. Fonts are the
 // system sans-serif, so the output fetches nothing.
@@ -23,10 +22,6 @@ const str = (value: unknown): string => (typeof value === "string" ? value : "")
 const within = (n: unknown, low: number, high: number): n is number => typeof n === "number" && Number.isFinite(n) && n >= low && n <= high;
 const LIMIT_COORD = 1e7;
 const TYPES: ReadonlySet<unknown> = new Set([...SHAPE_TYPES, "connector", "group"]);
-const kindOf = (author: unknown): string => {
-  const kind = (author as { kind?: unknown } | null)?.kind;
-  return typeof kind === "string" && (PRINCIPAL_KINDS as readonly string[]).includes(kind) ? kind : "unknown";
-};
 const sane = (s: Shape): boolean => within(s.x, -LIMIT_COORD, LIMIT_COORD) && within(s.y, -LIMIT_COORD, LIMIT_COORD) && within(s.w, 1e-6, LIMIT_COORD) && within(s.h, 1e-6, LIMIT_COORD);
 
 type Pt = { x: number; y: number };
@@ -190,7 +185,7 @@ export function toSvg(board: Board): string {
     if (el.type === "group") return "";
     const inner = el.type === "connector" ? connectorBody(el, shapes, lanes.get(el.id)!) : shapeBody(el);
     if (inner === "") return "";
-    const kind = kindOf(el.author);
+    const kind = el.author.kind;
     const mark = `data-id="${esc(el.id)}" data-type="${el.type}" data-author-kind="${kind}" data-machine-made="${kind !== "human"}"`;
     return `<g ${mark}>${inner}</g>`;
   });

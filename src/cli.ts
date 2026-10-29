@@ -25,6 +25,7 @@ Commands:
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
   export <board> [--format svg|png] [--out <path>]  Print SVG, or write PNG to --out.
+  repair <board> [--drop <element>]...     Owner only: fix a broken or over-cap board. Needs CANVAS_ACTOR=human:<id>.
   mcp                                      Serve these as MCP tools on stdio. Needs CANVAS_ACTOR.
 
 Write commands need an actor in CANVAS_ACTOR as <kind>:<id>, such as "agent:helper".
@@ -37,7 +38,8 @@ const flags = {
   type: { type: "string" }, x: { type: "string" }, y: { type: "string" }, w: { type: "string" }, h: { type: "string" },
   text: { type: "string" }, fill: { type: "string" }, stroke: { type: "string" }, src: { type: "string" },
   dx: { type: "string" }, dy: { type: "string" }, file: { type: "string" }, prefix: { type: "string" },
-  format: { type: "string" }, out: { type: "string" }, help: { type: "boolean" }, version: { type: "boolean" },
+  format: { type: "string" }, out: { type: "string" }, drop: { type: "string", multiple: true },
+  help: { type: "boolean" }, version: { type: "boolean" },
 } as const;
 
 // A blank or non-numeric flag becomes NaN, so the model refuses it with a clear error.
@@ -107,6 +109,9 @@ async function run(argv: string[]): Promise<void> {
       writeFileSync(v.out, data);
       return print({ out: v.out, format, bytes: data.length });
     }
+    case "repair":
+      need(1, "<board> [--drop <element>]...");
+      return print(await service.repair(board, actor(), v.drop ?? []));
     case "mcp":
       need(0, "");
       return runMcp(service, actor());

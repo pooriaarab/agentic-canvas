@@ -638,3 +638,102 @@ describe("update refuses to clear a required field", () => {
     expect(board.remove("t")).toEqual(["k", "t"]);
   });
 });
+
+describe("z at the limit", () => {
+  const seeded = (): Board => {
+    const board = new Board();
+    board.addShape(rect(0, 0, { id: "a" }), human);
+    return board;
+  };
+  const setZ = (board: Board, elementId: string, z: number) =>
+    board.doc.transact(() => (board.doc.getMap("elements").get(elementId) as Y.Map<unknown>).set("z", z));
+  const order = (board: Board) => board.list().map((e) => e.id);
+
+  test("a peer at the top z does not block creates", () => {
+    const board = seeded();
+    setZ(board, "a", 1e9);
+    const b = board.addShape(rect(0, 0, { id: "b" }), human);
+    board.addShape(rect(0, 0, { id: "c" }), human);
+    expect(b.z).toBe(1e9);
+    expect(order(board)).toEqual(["a", "b", "c"]);
+  });
+  test("a peer at the bottom z makes sending to the back fail, and hides nothing", () => {
+    const board = seeded();
+    setZ(board, "a", -1e9);
+    board.addShape(rect(0, 0, { id: "b" }), human);
+    expect(code(() => board.reorder("b", "back", human))).toBe("LIMIT");
+    expect(order(board)).toEqual(["a", "b"]);
+  });
+  test("bringing an element to the front past the top z fails, and changes nothing", () => {
+    const board = seeded();
+    board.addShape(rect(0, 0, { id: "b" }), human);
+    setZ(board, "a", 1e9);
+    const before = board.encode();
+    expect(code(() => board.reorder("a", "front", human))).toBe("LIMIT");
+    expect(board.encode()).toEqual(before);
+  });
+  test("a group of two that would pass the top z fails, and changes nothing", () => {
+    const board = seeded();
+    board.addShape(rect(0, 0, { id: "b" }), human);
+    board.addShape(rect(0, 0, { id: "c" }), human);
+    board.group(["b", "c"], human, "g");
+    setZ(board, "a", 1e9 - 1);
+    const before = board.encode();
+    expect(code(() => board.reorder("g", "front", human))).toBe("LIMIT");
+    expect(board.encode()).toEqual(before);
+  });
+});
+
+let overCapBytes: Uint8Array | undefined;
+/** A peer update with one more element than a board may hold. Built once: it is large. */
+function overCapUpdate(): Uint8Array {
+  if (overCapBytes) return overCapBytes;
+  const doc = new Y.Doc();
+  const elements = doc.getMap("elements");
+  doc.transact(() => {
+    for (let i = 0; i <= MAX_ELEMENTS; i++) {
+      const fields = { id: `s${i}`, type: "rect", z: i, x: 0, y: 0, w: 10, h: 10, text: "", author: human, editedBy: human };
+      elements.set(`s${i}`, new Y.Map(Object.entries(fields)));
+    }
+  });
+  overCapBytes = Y.encodeStateAsUpdate(doc);
+  return overCapBytes;
+}
+
+describe("owner repair", () => {
+  function seeded(): Board {
+    const board = new Board();
+    for (const id of ["a", "b", "c"]) board.addShape(rect(0, 0, { id }), human);
+    board.addConnector({ id: "k", from: { id: "a" }, to: { id: "b" } }, human);
+    return board;
+  }
+  test("drop removes a shape and the connectors that bind to it", () => {
+    const opened = Board.open(seeded().encode());
+    expect(opened.repair(["a"])).toEqual(["a", "k"]);
+    expect(opened.list().map((e) => e.id)).toEqual(["b", "c"]);
+  });
+  test("drop removes a group with its members and their connectors", () => {
+    const board = seeded();
+    board.group(["a", "b"], human, "g");
+    const opened = Board.open(board.encode());
+    expect(opened.repair(["g"])).toEqual(["a", "b", "g", "k"]);
+    expect(opened.list().map((e) => e.id)).toEqual(["c"]);
+  });
+  test("drop names an id that is not on the board: refused, nothing changes", () => {
+    const opened = Board.open(seeded().encode());
+    const before = opened.encode();
+    expect(code(() => opened.repair(["zz"]))).toBe("NOT_FOUND");
+    expect(opened.encode()).toEqual(before);
+  });
+  test("a board past the cap refuses repair until the drop brings it under", () => {
+    const opened = Board.open(overCapUpdate());
+    const before = opened.encode();
+    expect(code(() => opened.repair([]))).toBe("LIMIT");
+    expect(opened.encode()).toEqual(before);
+    expect(opened.repair(["s0"])).toEqual(["s0"]);
+    expect(Board.decode(opened.encode()).list()).toHaveLength(MAX_ELEMENTS);
+  }, 60_000);
+  test("repair on a healthy board changes nothing", () => {
+    expect(Board.open(seeded().encode()).repair()).toEqual([]);
+  });
+});

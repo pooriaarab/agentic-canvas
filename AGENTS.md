@@ -30,5 +30,6 @@ Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 - Name the actor on every write. Use `agent_of_human` or `agent` for an agent.
 - Ids are case-sensitive. Never change their case.
 - Treat a `CanvasError` as a failure. Its `code` tells you why.
+- Do not run `repair`. Only a human operator runs it, from the CLI.
 - Images are a `data:` URL (PNG, JPEG, GIF, or WebP, bounded in size) or a `blob:` key.
   A remote URL and SVG are refused.

@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { z } from "zod";
 import { principalSchema, type Principal } from "./principal.js";
 
-export type ErrorCode = "INVALID" | "DUPLICATE_ID" | "NOT_FOUND" | "BAD_REFERENCE" | "LIMIT" | "UNAVAILABLE";
+export type ErrorCode = "INVALID" | "DUPLICATE_ID" | "NOT_FOUND" | "BAD_REFERENCE" | "LIMIT" | "UNAVAILABLE" | "FORBIDDEN";
 
 export class CanvasError extends Error {
   constructor(
@@ -136,6 +136,7 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
 
 const isBindable = (type: unknown): boolean => typeof type === "string" && type !== "connector" && type !== "group";
 const isValidZ = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= MAX_Z;
+const clampZ = (value: number): number => Math.min(MAX_Z, Math.max(-MAX_Z, value));
 const hasId = (e: unknown): e is { id: string } => typeof e === "object" && e !== null && typeof (e as { id?: unknown }).id === "string";
 
 /**
@@ -163,10 +164,15 @@ export class Board {
    * Load a saved board. Refuses a doc past the element cap. Then it deletes every entry that fails
    * the element checks, and repairs what concurrent writers left broken.
    */
-  static decode(update: Uint8Array): Board {
+  /** Load a saved board with no element checks. Only the owner repair path uses it. */
+  static open(update: Uint8Array): Board {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, update);
-    const board = new Board(doc);
+    return new Board(doc);
+  }
+
+  static decode(update: Uint8Array): Board {
+    const board = Board.open(update);
     if (board.elements.size > MAX_ELEMENTS) throw new CanvasError("LIMIT", `a board holds at most ${MAX_ELEMENTS} elements`);
     board.repair();
     return board;
@@ -218,19 +224,29 @@ export class Board {
   /**
    * Delete what peers can leave broken: entries that fail the element checks, connectors whose
    * bound end is gone, and members that name a deleted group. Idempotent, so every peer may run it.
+   * `drop` names elements the owner removes too, with what they hold: a shape takes its connectors,
+   * a group takes its members. Refuses a result still past the cap, and then changes nothing.
    * Returns the ids fixed.
    */
-  repair(): string[] {
-    const all = this.storedList();
+  repair(drop: string[] = []): string[] {
+    const all = this.allStored();
     const byId = new Map(all.map((e) => [e.id, e]));
-    const invalid = [...this.elements.keys()].filter((key) => !byId.has(key));
-    const detached = all.filter((e) => this.isDetached(e, (endId) => byId.get(endId))).map((e) => e.id);
-    const loose = all.filter((e) => e.groupId !== undefined && byId.get(e.groupId)?.type !== "group").map((e) => e.id);
+    const doomed = new Set([...this.elements.keys()].filter((key) => !byId.has(key)));
+    for (const name of drop) {
+      if (!byId.has(name)) throw new CanvasError("NOT_FOUND", `no element "${name}"`);
+      this.subtreeIn(all, name).forEach((d) => doomed.add(d));
+    }
+    const alive = all.filter((e) => !doomed.has(e.id));
+    const aliveById = new Map(alive.map((e) => [e.id, e]));
+    const detached = new Set(alive.filter((e) => this.isDetached(e, (endId) => aliveById.get(endId))).map((e) => e.id));
+    const kept = alive.filter((e) => !detached.has(e.id));
+    if (kept.length > this.maxElements) throw new CanvasError("LIMIT", `a board holds at most ${this.maxElements} elements`);
+    const loose = kept.filter((e) => e.groupId !== undefined && aliveById.get(e.groupId)?.type !== "group").map((e) => e.id);
     this.doc.transact(() => {
-      [...invalid, ...detached].forEach((d) => this.elements.delete(d));
+      [...doomed, ...detached].forEach((d) => this.elements.delete(d));
       loose.forEach((l) => (this.elements.get(l) as Y.Map<unknown> | undefined)?.delete("groupId"));
     });
-    return [...new Set([...invalid, ...detached, ...loose])].sort();
+    return [...new Set([...doomed, ...detached, ...loose])].sort();
   }
 
   addShape(input: unknown, actor: Principal): Shape {
@@ -328,6 +344,7 @@ export class Board {
     const inner = new Set(this.subtree(elementId));
     const members = this.list().filter((e) => inner.has(e.id) && e.type !== "group");
     const start = to === "front" ? this.edgeZ(1) : this.edgeZ(-1) - (members.length - 1);
+    if (start < -MAX_Z || start + members.length - 1 > MAX_Z) throw new CanvasError("LIMIT", `z order is full: values must stay within ${MAX_Z}`);
     this.write(members.map((m, i) => [m.id, { z: start + i }]), by);
   }
 
@@ -342,6 +359,11 @@ export class Board {
   /** Every stored element that passes the checks, from back to front. Refuses a doc past the cap. */
   private storedList(): CanvasElement[] {
     if (this.elements.size > MAX_ELEMENTS) throw new CanvasError("LIMIT", `a board holds at most ${MAX_ELEMENTS} elements`);
+    return this.allStored();
+  }
+
+  /** Like storedList, with no cap check. Repair needs every entry, even on a board past the cap. */
+  private allStored(): CanvasElement[] {
     const all: CanvasElement[] = [];
     for (const key of this.elements.keys()) {
       const el = this.stored(key);
@@ -369,6 +391,7 @@ export class Board {
     }
   }
 
+  /** The z value just past the top or the bottom. Not clamped: the caller checks the range. */
   private edgeZ(direction: 1 | -1): number {
     let z = 0;
     for (const m of this.elements.values()) {
@@ -380,8 +403,12 @@ export class Board {
 
   /** The element and, for a group, everything below it. Cycle-safe. */
   private subtree(elementId: string): string[] {
+    return this.subtreeIn(this.storedList(), elementId);
+  }
+
+  private subtreeIn(all: CanvasElement[], elementId: string): string[] {
     const children = new Map<string, string[]>();
-    for (const { id: childId, groupId: parent } of this.storedList()) {
+    for (const { id: childId, groupId: parent } of all) {
       if (parent !== undefined) children.set(parent, [...(children.get(parent) ?? []), childId]);
     }
     const seen = new Set([elementId]);
@@ -394,7 +421,7 @@ export class Board {
     const elementId = fields.id ?? randomUUID();
     if (this.elements.has(elementId)) throw new CanvasError("DUPLICATE_ID", `element "${elementId}" already exists`);
     if (this.elements.size >= this.maxElements) throw new CanvasError("LIMIT", `a board holds at most ${this.maxElements} elements`);
-    const record = { ...fields, id: elementId, z: this.edgeZ(1), author: by, editedBy: by };
+    const record = { ...fields, id: elementId, z: clampZ(this.edgeZ(1)), author: by, editedBy: by };
     const entries = Object.entries(record).filter(([, v]) => v !== undefined);
     this.doc.transact(() => this.elements.set(elementId, new Y.Map(entries)));
     return this.get(elementId)!;

@@ -37,6 +37,7 @@ npx agentic-canvas export demo --format png --out demo.png
 ```
 
 Other commands: `add`, `connect`, `move`, `rm`. Run `npx agentic-canvas --help`.
+`repair` is for the owner only. It needs `CANVAS_ACTOR=human:<id>`.
 Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
 needs an actor in `CANVAS_ACTOR`, as `<kind>:<id>`. The operator sets it. A write
 fails when it is unset, empty, or has a bad kind. The CLI has no `--actor` flag and no
@@ -50,7 +51,7 @@ CANVAS_ACTOR=agent:helper npx agentic-canvas --dir ./boards mcp
 
 The server speaks MCP on stdio. It has one tool for each CLI command: `create_board`,
 `read_board`, `add_shape`, `connect`, `move`, `remove`, `draw_flow`, `export_svg`, and
-`export_png`. The server will not start unless `CANVAS_ACTOR` is set to a valid
+`export_png`. `repair` is not a tool. Only a human operator runs it, from the CLI. The server will not start unless `CANVAS_ACTOR` is set to a valid
 `<kind>:<id>`. That actor stamps every write. No tool takes an actor, author, or kind, so a
 caller cannot choose who it writes as. An error comes back as a tool error with a code.
 
@@ -113,7 +114,8 @@ the direction. Lines that start with `#` or `//` are comments.
 - Two peers that make the same explicit id at the same time keep only one element, with no
   error. Explicit ids are safe with one writer. Leave `id` empty and the board picks a random one.
 - A synced update is untrusted. An element that fails the write rules is hidden, and `repair()`
-  deletes it. A board past the element cap refuses to load or read.
+  deletes it. A board past the element cap refuses to load or read. A human operator runs
+  `repair --drop <element>` to delete elements until it fits.
 - `update` cannot clear a required field. Only `fill` and `stroke` accept `undefined`.
 - Delete against connect can leave a connector with a missing end. Readers hide it. `repair()`
   removes it, and `Board.decode` runs `repair()` for you.
