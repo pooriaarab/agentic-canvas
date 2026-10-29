@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
-import type { Principal } from "./core/principal.js";
+import { principalSchema, type Principal } from "./core/principal.js";
 import { readBoard, type BoardData } from "./core/read.js";
 import { toSvg } from "./core/svg.js";
 import { svgToPng } from "./png.js";
@@ -70,7 +70,9 @@ export class CanvasService {
 
   /** Owner only. Repair a board and delete the named elements. Only a human actor may call it. */
   async repair(id: string, actor: Principal, drop: string[] = []): Promise<{ id: string; fixed: string[]; elements: number }> {
-    if (actor.kind !== "human") throw new CanvasError("FORBIDDEN", "only a human owner can repair a board");
+    const by = principalSchema.safeParse(actor);
+    if (!by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
+    if (by.data.kind !== "human") throw new CanvasError("FORBIDDEN", "only a human owner can repair a board");
     return this.store.transaction(async (tx) => {
       const doc = await tx.get(COLLECTION, id);
       if (!doc) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
