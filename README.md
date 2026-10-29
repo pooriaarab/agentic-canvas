@@ -7,9 +7,9 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.2.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.3.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
-> and the SDK can join a live room. The web UI is not built yet.
+> and the SDK can join a live room. A remote client calls the Worker API. The web UI is not built yet.
 
 ## Install
 

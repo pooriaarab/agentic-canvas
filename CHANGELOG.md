@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add a typed remote client for the Worker API (`agentic-canvas/client`). `createClient({ baseUrl, token, fetch? })`
+  has one method per route. A failed call throws `CanvasApiError` with the API `code` and the HTTP `status`.
+  Every call takes an `AbortSignal`. The client uses only `fetch` and never retries.
+- Run the publish workflow on Node 22 and stop `wrangler dev` cleanly in the tests.
+
 ## 0.2.0
 
 - Add live co-editing. A room holds one board. A client saves the room back to the
