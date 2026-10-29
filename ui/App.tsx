@@ -1,8 +1,9 @@
 import { AppShell, Button, Dialog, DialogClose, EmptyState, Input, Select, SidebarNav, useTheme, useToast } from "agentic-design/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { CanvasClient } from "../src/client";
-import { clientFor, describe, getToken, setToken } from "./api";
-import { BoardView } from "./BoardView";
+import type { PrincipalKind } from "../src/core/principal";
+import { API, clientFor, describe, getToken, setToken } from "./api";
+import { BoardEditor } from "./embed";
 import { Failure } from "./Failure";
 
 type Me = { actor: string; kind: string; role: "editor" | "viewer" };
@@ -125,7 +126,7 @@ function Workspace({ token, onSignOut }: { token: string; onSignOut: () => void 
       }
     >
       {board !== null ? (
-        me ? <BoardView key={board} id={board} token={token} me={me} /> : list.state === "error" ? <Failure message={list.message} retry={load} /> : <p role="status">Loading…</p>
+        me ? <BoardEditor key={board} boardId={board} client={client} principal={{ kind: me.kind as PrincipalKind, name: me.actor, role: me.role }} room={{ baseUrl: `${window.location.origin}${API}`, token }} backHref="#/" /> : list.state === "error" ? <Failure message={list.message} retry={load} /> : <p role="status">Loading…</p>
       ) : (
         <section aria-labelledby="boards-h" aria-busy={list.state === "loading"}>
           <div className="row">

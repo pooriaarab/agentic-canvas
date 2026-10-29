@@ -6,7 +6,18 @@ const pkg = JSON.parse(
 ) as { version: string };
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/cli.ts", "src/store-file.ts", "src/worker.ts", "src/live-worker.ts", "src/live.ts", "src/client.ts"],
+  // Named entries, so `ui/embed.tsx` lands next to the others as `dist/embed.js`.
+  entry: {
+    index: "src/index.ts",
+    cli: "src/cli.ts",
+    "store-file": "src/store-file.ts",
+    worker: "src/worker.ts",
+    "live-worker": "src/live-worker.ts",
+    live: "src/live.ts",
+    client: "src/client.ts",
+    embed: "ui/embed.tsx",
+  },
+  external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"],
   format: ["esm"],
   dts: true,
   clean: true,

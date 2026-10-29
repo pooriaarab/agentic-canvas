@@ -3,6 +3,7 @@ import { ThemeProvider, ToastProvider, TooltipProvider } from "agentic-design/re
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./ui.css";
+import "./app.css";
 
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider>

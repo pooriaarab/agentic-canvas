@@ -1,11 +1,12 @@
 import { Button, EmptyState, Input, PresenceChip, PresenceStack, Select, Textarea, Toolbar, ToolbarButton, ToolbarSeparator, useToast, type PresenceEntry } from "agentic-design/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { ShapeType } from "../src/core/board";
 import type { BoardData, EdgeData, NodeData } from "../src/core/read";
-import { CanvasApiError, clientFor, describe } from "./api";
+import type { CanvasClient } from "../src/client";
+import { describe, isApiError } from "./errors";
 import { Canvas, HOME, MAX_ZOOM, MIN_ZOOM, PAN_STEP, TYPE_NAME, byline, type View } from "./Canvas";
 import { Failure } from "./Failure";
-import { joinRoom, type Room } from "./presence";
+import { joinRoom, type Room, type RoomOptions } from "./presence";
 
 type State = { state: "loading" } | { state: "error"; message: string; missing: boolean } | { state: "ready"; data: BoardData & { id: string } };
 type Item = NodeData | EdgeData;
@@ -22,8 +23,19 @@ const POLL_MS = 5000;
 const DEFAULT_SIZE: Record<string, [number, number]> = { rect: [140, 70], ellipse: [140, 70], diamond: [140, 90], text: [140, 40], sticky: [150, 120] };
 const DEFAULT_TEXT: Record<string, string> = { rect: "Rectangle", ellipse: "Ellipse", diamond: "Decision", text: "Text", sticky: "Note" };
 
-export function BoardView({ id, token, me }: { id: string; token: string; me: { actor: string; kind: string; role: "editor" | "viewer" } }) {
-  const client = useMemo(() => clientFor(token), [token]);
+export interface BoardViewProps {
+  id: string;
+  client: CanvasClient;
+  /** The live room. Without one, the view shows no one else and reads the board by its timer only. */
+  room?: RoomOptions;
+  me: { actor: string; kind: string; role: "editor" | "viewer" };
+  /** A link for a missing board to go back to. */
+  backHref?: string;
+}
+
+export function BoardView({ id, client, room: roomOptions, me, backHref }: BoardViewProps) {
+  const roomUrl = roomOptions?.baseUrl;
+  const roomToken = roomOptions?.token;
   const toast = useToast();
   const [board, setBoard] = useState<State>({ state: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
@@ -51,7 +63,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
       setBoard({ state: "ready", data });
     } catch (e) {
       // A failed refresh keeps the board on screen. Only a first load shows the error page.
-      setBoard((prev) => (prev.state === "ready" ? prev : { state: "error", message: describe(e), missing: e instanceof CanvasApiError && e.status === 404 }));
+      setBoard((prev) => (prev.state === "ready" ? prev : { state: "error", message: describe(e), missing: isApiError(e) && e.status === 404 }));
     }
   }, [client, id]);
   /**
@@ -83,10 +95,11 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
   }, [saving]);
 
   useEffect(() => {
-    const joined = joinRoom({ board: id, token, name: me.actor, onPeers: setPeers, onChange: () => void load(), onStatus: setLive });
+    if (roomUrl === undefined || roomToken === undefined) return;
+    const joined = joinRoom({ board: id, baseUrl: roomUrl, token: roomToken, name: me.actor, onPeers: setPeers, onChange: () => void load(), onStatus: setLive });
     room.current = joined;
     return () => (joined.leave(), (room.current = undefined));
-  }, [id, token, me.actor, load]);
+  }, [id, roomUrl, roomToken, me.actor, load]);
   // A change made outside this UI (the HTTP API, the CLI, an agent) raises no presence counter, so a slow refresh finds it.
   useEffect(() => {
     const timer = setInterval(() => void load(), POLL_MS);
@@ -153,7 +166,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
   if (board.state === "loading") return <p role="status">Loading board…</p>;
   if (board.state === "error") {
     return board.missing ? (
-      <EmptyState title="This board does not exist" description={<a href="#/">Back to all boards</a>} />
+      <EmptyState title="This board does not exist" description={backHref ? <a href={backHref}>Back to all boards</a> : undefined} />
     ) : (
       <Failure message={board.message} retry={() => (setBoard({ state: "loading" }), void load())} />
     );

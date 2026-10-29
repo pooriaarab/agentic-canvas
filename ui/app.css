@@ -1,0 +1,11 @@
+/* Page rules for the app shell. They are not in the embeddable styles. */
+html, body, #root { height: 100%; margin: 0; }
+.signin { max-width: 24rem; margin: var(--ad-space-16) auto; padding: var(--ad-space-4); display: grid; gap: var(--ad-space-4); }
+.signin form { display: grid; gap: var(--ad-space-4); }
+.who { color: var(--ad-color-text-muted); font-size: var(--ad-font-size-sm); }
+.boards { list-style: none; padding: 0; display: grid; gap: var(--ad-space-2); }
+.boards a { display: block; padding: var(--ad-space-3) var(--ad-space-4); border: 1px solid var(--ad-color-border); border-radius: var(--ad-radius-md); background: var(--ad-color-surface); color: var(--ad-color-text); }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--ad-space-4); flex-wrap: wrap; }
+.failure { border: 1px solid var(--ad-color-danger); border-radius: var(--ad-radius-md); padding: var(--ad-space-4); color: var(--ad-color-danger-text); background: var(--ad-color-danger-subtle); display: grid; gap: var(--ad-space-3); justify-items: start; }
+.note { color: var(--ad-color-text-muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
