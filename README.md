@@ -197,7 +197,7 @@ board.unmount();                      // leaves the room and stops the refresh t
 
 The principal needs a known `kind` and a `name`. `mount` throws a `TypeError` without them. Only the
 role `editor` can change the board, and `readOnly: true` opens it read only for an editor too. The
-server still checks every write against the token. The host page owns the theme.
+server still checks every write against the token. The host page owns the theme. `ui.css` uses CSS nesting under `.cv-root`, so it does not change the rest of your page. It needs a browser from 2023 or later.
 For a React app, `BoardEditor` is the same component without a root. Wrap it in the providers of
 `agentic-design/react`.
 

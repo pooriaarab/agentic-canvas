@@ -6,12 +6,19 @@ import type { PresenceEntry } from "agentic-design/react";
 const WS_PROTOCOL = "agentic-canvas.bearer";
 const b64url = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-/** A browser cannot set a header on a WebSocket, so the token travels as a sub-protocol. */
-class BearerSocket extends WebSocket {
-  static token = "";
-  constructor(url: string) {
-    super(url, [WS_PROTOCOL, b64url(BearerSocket.token)]);
-  }
+/** A browser cannot set a header on a WebSocket, so the token travels as a sub-protocol. Each room has its own class, so two boards on one page keep their own tokens. */
+const bearerSocket = (token: string) =>
+  class extends WebSocket {
+    constructor(url: string) {
+      super(url, [WS_PROTOCOL, b64url(token)]);
+    }
+  };
+
+/** The WebSocket address of a board's room. */
+export function roomUrl(baseUrl: string, board: string): string {
+  const url = new URL(`${baseUrl.replace(/\/+$/, "")}/boards/${encodeURIComponent(board)}/ws`, window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }
 
 export interface Room {
@@ -37,13 +44,10 @@ export interface RoomOptions {
 }
 
 export function joinRoom(options: { board: string; baseUrl: string; token: string; name: string; onPeers: (peers: PresenceEntry[]) => void; onChange: () => void; onStatus: (connected: boolean) => void }): Room {
-  const url = new URL(`${options.baseUrl.replace(/\/+$/, "")}/boards/${encodeURIComponent(options.board)}/ws`, window.location.href);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  BearerSocket.token = options.token;
   const seen = new Map<number, number>();
   const client = SyncClient.open({
-    url: url.toString(),
-    WebSocket: BearerSocket as never,
+    url: roomUrl(options.baseUrl, options.board),
+    WebSocket: bearerSocket(options.token) as never,
     presence: { name: options.name, cursor: { rev: 0 } },
     reconnect: { initialMs: 1000, maxMs: 15_000 },
     onStatus: (status) => options.onStatus(status === "connected"),

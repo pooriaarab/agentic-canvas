@@ -1,6 +1,7 @@
 // The board UI for an app that embeds it: `agentic-canvas/ui`. The app gives a client, a board id, and the principal who
 // uses the board. React and react-dom are peer dependencies. The styles are in `agentic-canvas/ui.css`. The host owns the theme.
 import { ToastProvider, TooltipProvider } from "agentic-design/react";
+import { Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { CanvasClient } from "../src/client.js";
 import { PRINCIPAL_KINDS, type PrincipalKind } from "../src/core/principal.js";
@@ -38,11 +39,33 @@ function checkPrincipal(principal: BoardPrincipal): void {
   }
 }
 
-/** The board for one id, with its toolbar, presence, and side panel. It needs the providers of `agentic-design`. */
-export function BoardEditor({ boardId, client, principal, readOnly, room, backHref }: BoardEditorOptions) {
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? (
+      <div role="alert" className="failure"><p><strong>The board stopped.</strong> It has content this page cannot show, or a principal it does not know. Reload to try again.</p></div>
+    ) : this.props.children;
+  }
+}
+
+function Board({ boardId, client, principal, readOnly, room, backHref }: BoardEditorOptions) {
   checkPrincipal(principal);
   const role = principal.role === "editor" && !readOnly ? "editor" : "viewer";
   return <BoardView key={boardId} id={boardId} client={client} room={room} backHref={backHref} me={{ actor: principal.name, kind: principal.kind, role }} />;
+}
+
+/** The board for one id, with its toolbar, presence, and side panel. It needs the providers of `agentic-design`. A bad principal shows an alert. */
+export function BoardEditor(options: BoardEditorOptions) {
+  return (
+    <div className="cv-root">
+      <Boundary>
+        <Board {...options} />
+      </Boundary>
+    </div>
+  );
 }
 
 export interface MountedBoard {

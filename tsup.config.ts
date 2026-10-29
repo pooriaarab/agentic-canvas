@@ -21,8 +21,6 @@ export default defineConfig({
   format: ["esm"],
   dts: true,
   clean: true,
-  // Each entry stands alone: `dist/client.js` must not import a shared chunk.
-  splitting: false,
   define: {
     __PACK_VERSION__: JSON.stringify(pkg.version),
   },

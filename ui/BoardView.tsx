@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import type { ShapeType } from "../src/core/board";
 import type { BoardData, EdgeData, NodeData } from "../src/core/read";
 import type { CanvasClient } from "../src/client";
-import { CanvasApiError, describe } from "./api";
+import { describe, isApiError } from "./errors";
 import { Canvas, HOME, MAX_ZOOM, MIN_ZOOM, PAN_STEP, TYPE_NAME, byline, type View } from "./Canvas";
 import { Failure } from "./Failure";
 import { joinRoom, type Room, type RoomOptions } from "./presence";
@@ -63,7 +63,7 @@ export function BoardView({ id, client, room: roomOptions, me, backHref }: Board
       setBoard({ state: "ready", data });
     } catch (e) {
       // A failed refresh keeps the board on screen. Only a first load shows the error page.
-      setBoard((prev) => (prev.state === "ready" ? prev : { state: "error", message: describe(e), missing: e instanceof CanvasApiError && e.status === 404 }));
+      setBoard((prev) => (prev.state === "ready" ? prev : { state: "error", message: describe(e), missing: isApiError(e) && e.status === 404 }));
     }
   }, [client, id]);
   /**

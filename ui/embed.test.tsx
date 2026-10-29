@@ -3,6 +3,8 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CanvasClient } from "../src/client.js";
 import type { BoardData } from "../src/core/read.js";
+import { describe as words } from "./errors.js";
+import { roomUrl } from "./presence.js";
 import { mount, type BoardEditorOptions, type MountedBoard } from "./embed.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -112,5 +114,38 @@ describe("mount", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("shows an alert, not a blank page, for a board that gets a bad principal after mount", async () => {
+    const { client } = fakeClient();
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { BoardEditor } = await import("./embed.js");
+    const { createRoot } = await import("react-dom/client");
+    host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    await act(async () => root.render(<BoardEditor boardId="b1" client={client} principal={{ kind: "future" as never, name: "Ada" }} />));
+    expect(host.querySelector("[role=alert]")?.textContent).toContain("The board stopped");
+    await act(async () => root.unmount());
+    quiet.mockRestore();
+  });
+});
+
+describe("helpers", () => {
+  it("builds the room address from a base with or without a trailing slash", () => {
+    expect(roomUrl("https://c.example/api/v1/canvas/", "a b")).toBe("wss://c.example/api/v1/canvas/boards/a%20b/ws");
+    expect(roomUrl("http://c.example/api", "b1")).toBe("ws://c.example/api/boards/b1/ws");
+  });
+
+  it("reads an error from any copy of the client class by its name and code", () => {
+    class CanvasApiError extends Error {
+      name = "CanvasApiError";
+      constructor(readonly code: string, message: string, readonly status: number) {
+        super(message);
+      }
+    }
+    expect(words(new CanvasApiError("UNAUTHORIZED", "x", 401))).toBe("The server did not accept this token.");
+    expect(words(new CanvasApiError("NOT_FOUND", "no board", 404))).toBe("no board");
+    expect(words(new Error("plain"))).toBe("plain");
+    expect(words({ name: "CanvasApiError", code: 1 })).toBe("Something went wrong.");
   });
 });
