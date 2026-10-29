@@ -308,11 +308,11 @@ const board = mount(element, {
   SDK (letters, digits, `.`, `_`, `-`). An agent kind marks its elements as machine-made. A refused write shows a message
   and leaves the document alone. The server does not check these writes: your app and its room decide who may write.
 - In host mode `boardId` only keys the view. The UI shows the one board that the document holds (its `elements` and `meta` maps), so keep one board in each document.
-- A document pushed past the element cap (10,000) can no longer be read. The UI keeps the last board it drew, and your app should stop a peer from writing that far.
+- A document pushed past the element cap (10,000) can no longer be read. If that happens after the first draw, the UI keeps the last board it drew. At mount it shows the error page with Retry. Your app should stop a peer from writing that far.
 - `client` or `room` together with `host` throws a `TypeError`, so a board never half-writes to a server. (`BoardEditor` shows an alert for these, as it does for a bad principal.) Give presence in `host.presence`.
 - The principal's `id` (default: `name`) must pass the identity rule, so a display name with a space needs an explicit `id`. A bad one throws a `TypeError` at mount.
 - The UI redraws only for changes in the document's `elements` and `meta` maps. Other data in the same document is left alone.
-- `status` and `onStatus` are read when the UI opens `doc`. A new function on `update()` does not open it again. `onStatus` alone starts as not live, until it reports "connected". With neither, the board shows as live. Add `onStatus` to follow later changes.
+- `status` and `onStatus` are read when the UI opens `doc`. A new function on `update()` does not open it again. `onStatus` alone starts as not live, until it reports "connected". With neither, the board shows as live. Give `onStatus` at mount to follow later changes. It is not picked up by a later `update()` for the same `doc`.
 - With `presence`, the UI shows the peers. It never sends a cursor, and never closes your room or your document.
 - On `unmount` the UI removes its observers from your document and leaves it as it is.
 

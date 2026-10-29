@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
 // Ways the host mode can fail, listed before the tests:
@@ -18,8 +18,14 @@ test.beforeAll(async () => {
 });
 
 const sockets: string[] = [];
+const contexts: BrowserContext[] = [];
+test.afterEach(async () => {
+  for (const context of contexts.splice(0)) await context.close();
+});
 async function host(browser: Browser, who: Record<string, string>, theme: "light" | "dark" = "light"): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  contexts.push(context);
   // From the first request on: a room opened at mount must not be missed.
   page.on("websocket", (socket) => sockets.push(socket.url()));
   await page.route("https://host.test/**", (route) => {
