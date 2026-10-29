@@ -83,15 +83,27 @@ async function send(live: Realtime, id: string, update: Uint8Array, roomVector: 
 
 /**
  * Who sent each Yjs item, from the room's log of updates. The principal is the one the token named, so no client picks it.
- * The seeder is no author, and an item the log lacks (a range it dropped) has no writer: the save falls back to its other checks.
+ * The seeder is no author. An item the log lacks (a range it dropped, or an item the room never had) has no writer.
  */
 export async function writers(live: Realtime, id: string): Promise<Writer> {
   const log = await live.attribution(id);
-  const ranges = new Map<number, NonNullable<typeof log>["ranges"]>();
-  for (const range of log?.ranges ?? []) ranges.set(range.client, [...(ranges.get(range.client) ?? []), range]);
+  // No log is no answer. A save that guessed would delete or undo honest work, so it waits for the next request.
+  if (!log) throw new CanvasError("UNAVAILABLE", "the room has no log of who sent its updates");
+  const ranges = new Map<number, typeof log.ranges>();
+  for (const range of log.ranges) ranges.set(range.client, [...(ranges.get(range.client) ?? []), range]);
+  for (const list of ranges.values()) list.sort((a, b) => a.clock - b.clock);
   return ({ client, clock }) => {
-    const range = ranges.get(client)?.find((r) => clock >= r.clock && clock < r.clock + r.length);
-    const who = range && log!.authors[range.author];
+    const list = ranges.get(client) ?? [];
+    // The last range that starts at or before the clock, found by bisection.
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (list[mid]!.clock <= clock) low = mid + 1;
+      else high = mid;
+    }
+    const range = list[low - 1];
+    const who = range && clock < range.clock + range.length ? log.authors[range.author] : undefined;
     return who && !same(who, SEEDER) ? { id: who.id, kind: who.kind } : undefined;
   };
 }

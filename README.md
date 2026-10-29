@@ -202,7 +202,7 @@ at the same time keep the last write. The board list shows the first 100 boards.
   `POST /boards/:id/checkpoint` still work for a client that saves by hand. Every save checks author stamps,
   and the Worker sets them from the room's log of who sent each update (the token's actor and kind): a client
   cannot claim another principal, and an agent cannot pass as a person, even by naming one who is in the room.
-  Where the log has no entry (it keeps a capped number), the save falls back to the list of principals the room saw. A stored board over 1,000,000 bytes cannot seed a room: a live join answers 422 for it.
+  A new item that the log lacks (it keeps a capped number of ranges, and a hand save may hold content the room never had) has no sender: the save deletes a new element and undoes a change, unless a hand save names the one who posted it. A stored board over 1,000,000 bytes cannot seed a room: a live join answers 422 for it.
 - The SDK joins a room: `import { LiveBoard, LiveService } from "agentic-canvas/live"`. The CLI and the MCP
   server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
   `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.

@@ -114,6 +114,12 @@ describe("live room", () => {
     expect(nodes.map((n: { id: string }) => n.id).sort()).toEqual(["fake", "s1", "s2"]);
     expect(nodes.find((n: { id: string }) => n.id === "fake")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" }, editedBy: { kind: "agent_of_human", id: "helper" } });
     expect(nodes.find((n: { id: string }) => n.id === "s1")).toMatchObject({ text: "bot text", author: { kind: "human", id: "ada" }, editedBy: { kind: "agent_of_human", id: "helper" }, lastEditMachineMade: true });
+    // A hand save with content the room never had: the agent posts it, so it is the agent's, whatever the stamp says.
+    const ghost = new Board();
+    ghost.addShape({ id: "ghost", type: "rect", x: 3, y: 3 }, { kind: "human", id: "ada" });
+    const posted = await call("/boards/b1/checkpoint", BOT, { method: "POST", body: ghost.encode() as BodyInit });
+    expect((await posted.json()).fixed).toEqual(["ghost"]);
+    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.find((n: { id: string }) => n.id === "ghost")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
 
