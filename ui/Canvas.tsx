@@ -201,7 +201,7 @@ export function Canvas({ data, selected, editable, view, onView, onSelect, onMov
                 <line x1={x1} y1={y1} x2={x2} y2={y2} className="hit" />
                 <line x1={x1} y1={y1} x2={x2} y2={y2} className="edge" markerEnd={e.endArrow ? "url(#arrow)" : undefined} markerStart={e.startArrow ? "url(#arrow)" : undefined} />
                 {e.text && <text aria-hidden="true" x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} className="edge-text" textAnchor="middle">{e.text}</text>}
-                {selected === e.id && <line x1={x1} y1={y1} x2={x2} y2={y2} className="ring-line" />}
+                <line x1={x1} y1={y1} x2={x2} y2={y2} className="ring-line" />
               </g>
               {badge(e, (x1 + x2) / 2 - 25, (y1 + y2) / 2 - 14)}
               </g>
@@ -222,7 +222,7 @@ export function Canvas({ data, selected, editable, view, onView, onSelect, onMov
                 <text aria-hidden="true" x={tx} y={top} textAnchor={anchor} className={n.type === "sticky" ? "label sticky-label" : "label"}>
                   {n.type === "image" && !n.text ? <tspan>Image</tspan> : lines.map((l, i) => <tspan key={i} x={tx} dy={i === 0 ? 0 : 18}>{i < lines.length - 1 ? `${l} ` : l}</tspan>)}
                 </text>
-                {selected === n.id && <rect x={s.x - 4} y={s.y - 4} width={s.w + 8} height={s.h + 8} rx={8} className="ring" />}
+                <rect x={s.x - 4} y={s.y - 4} width={s.w + 8} height={s.h + 8} rx={8} className="ring" />
                 {selected === n.id && editable && <circle cx={s.x + s.w + 4} cy={s.y + s.h + 4} r={7 / view.k} className="handle" onPointerDown={(ev) => begin(ev, "resize", n.id)} />}
               </g>
               {badge(n, s.x, s.y)}

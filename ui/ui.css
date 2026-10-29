@@ -26,8 +26,9 @@ html, body, #root { height: 100%; margin: 0; }
 .hit { stroke: transparent; stroke-width: 14; }
 .arrowhead { fill: var(--ad-color-text-muted); }
 .edge-text { fill: var(--ad-color-text); paint-order: stroke; stroke: var(--ad-color-surface-sunken); stroke-width: 4px; pointer-events: none; }
-.ring, .ring-line { fill: none; stroke: var(--ad-color-focus); stroke-width: 3; pointer-events: none; }
-.item:focus-visible .ring, .item:focus-visible .ring-line { stroke-width: 4; stroke-dasharray: none; }
+.ring, .ring-line { fill: none; stroke: none; stroke-width: 3; pointer-events: none; }
+.item.selected .ring, .item.selected .ring-line, .item:focus-visible .ring, .item:focus-visible .ring-line { stroke: var(--ad-color-focus); }
+.item:focus-visible .ring, .item:focus-visible .ring-line { stroke-width: 4; }
 .handle { fill: var(--ad-color-focus); stroke: var(--ad-color-bg); stroke-width: 2; cursor: nwse-resize; }
 .agent-badge rect { fill: var(--ad-color-agent-subtle); stroke: var(--ad-color-agent); }
 .agent-badge text { fill: var(--ad-color-agent-text); font-size: 11px; font-weight: 600; pointer-events: none; }

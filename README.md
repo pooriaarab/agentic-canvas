@@ -158,7 +158,11 @@ npm run test:e2e                   # Playwright against `wrangler dev`, with axe
 ```
 
 The E2E run creates a board, adds a shape and a note, moves them, reloads, and checks each view
-with axe in the light and the dark theme. It saves screenshots to `docs/ui/`.
+with axe in the light and the dark theme. It saves screenshots to `test-results/screens/`. The committed set in `docs/ui/` shows the UI at this release. Run `UPDATE_SCREENSHOTS=1 npm run test:e2e` to refresh it.
+
+A browser cannot set a header on a WebSocket, so the UI sends its token to the live room as a WebSocket sub-protocol (`Sec-WebSocket-Protocol`). A proxy that logs request headers can record it. The API itself takes the token only in an `Authorization` header, and the sub-protocol only on a WebSocket upgrade.
+
+The UI saves each edit in order, and shows "Saving…" until the last one is stored. It asks the browser to confirm before you leave a page with unsaved edits. It reads the board again at most once a second.
 
 UI limits: the UI draws with the theme colors and ignores the `fill` and `stroke` of an element.
 It shows no image pixels. A text field of a shape is plain text. Two editors who move one item

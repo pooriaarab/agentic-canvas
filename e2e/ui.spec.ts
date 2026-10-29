@@ -17,13 +17,16 @@ import { createClient } from "../src/client.js";
 import { TOKENS } from "./playwright.config.js";
 
 const API = "http://127.0.0.1:18900/api/v1/canvas";
-const shots = (name: string) => `docs/ui/${name}.png`;
+// The committed set in docs/ui is refreshed on purpose (UPDATE_SCREENSHOTS=1). A normal run writes to test-results.
+const shots = (name: string) => `${process.env.UPDATE_SCREENSHOTS ? "docs/ui" : "test-results/screens"}/${name}.png`;
+/** Edits are saved when the page says so. A reload before that would drop the last ones. */
+const saved = (page: Page) => expect(page.getByText("All changes saved")).toBeVisible();
 
 async function signIn(page: Page, token: string) {
   await page.goto("/");
   await page.getByLabel("Access token").fill(token);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Boards" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Boards", exact: true })).toBeVisible();
 }
 
 async function axe(page: Page) {
@@ -97,6 +100,7 @@ test("create a board, add a shape and a note, move them, reload", async ({ page 
   // The box includes the stroke.
   await expect.poll(async () => Math.round((await box(page, "Rectangle")).width / 5)).toBe(44);
 
+  await saved(page);
   await page.reload();
   await expect(item(page, "Sticky note: Ship it")).toBeVisible();
   const after = await box(page, "Rectangle");
@@ -135,6 +139,7 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
   await expect.poll(async () => Math.round((await box(page, "Rectangle")).x - start.x)).toBe(20);
   await page.keyboard.press("Shift+ArrowRight");
   await expect.poll(async () => Math.round((await box(page, "Rectangle")).width - start.width)).toBe(10);
+  await saved(page);
   await page.reload();
   const kept = await box(page, "Rectangle");
   expect([Math.round(kept.x - start.x), Math.round(kept.width - start.width)]).toEqual([20, 10]);
@@ -142,6 +147,9 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
   await item(page, "Rectangle: First").focus();
   await page.keyboard.press("Escape");
   await expect(item(page, "Rectangle: First")).toHaveAttribute("aria-pressed", "false");
+  // Focus stays on the item, so its ring must show.
+  await expect(item(page, "Rectangle: First")).toBeFocused();
+  await expect(item(page, "Rectangle: First").locator(".ring")).toHaveCSS("stroke", /rgb/);
   await item(page, "Ellipse: Second").focus();
   await page.keyboard.press("Delete");
   await expect(item(page, "Ellipse: Second")).toHaveCount(0);
@@ -186,7 +194,7 @@ test("a missing board and a failed list show a way out", async ({ page }) => {
   await check(page, "error");
   await page.unroute("**/api/v1/canvas/boards");
   await page.getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByRole("heading", { name: "Boards" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Boards", exact: true })).toBeVisible();
 });
 
 test("two editors see each other and each other's changes", async ({ browser }) => {

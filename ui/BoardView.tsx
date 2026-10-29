@@ -35,7 +35,12 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
   const canvasBox = useRef<HTMLDivElement>(null);
   const editable = me.role === "editor";
 
-  const load = useCallback(async () => {
+  const [saving, setSaving] = useState(0);
+  const pending = useRef(0);
+  const lastRead = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const read = useCallback(async () => {
     try {
       const data = await client.readBoard(id);
       setBoard({ state: "ready", data });
@@ -44,10 +49,33 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
       setBoard((prev) => (prev.state === "ready" ? prev : { state: "error", message: describe(e), missing: e instanceof CanvasApiError && e.status === 404 }));
     }
   }, [client, id]);
+  /**
+   * Read the board again, at most once a second, and never while a write is waiting: the screen is ahead of the
+   * server then, and an older read would put old values back. The last write reads when the queue is empty.
+   */
+  const load = useCallback(async () => {
+    if (pending.current > 0) return;
+    const wait = lastRead.current + 1000 - Date.now();
+    if (wait > 0) {
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => void load(), wait);
+      return;
+    }
+    lastRead.current = Date.now();
+    await read();
+  }, [read]);
   useEffect(() => {
     setBoard({ state: "loading" });
+    lastRead.current = 0;
     void load();
+    return () => clearTimeout(timer.current);
   }, [load]);
+  useEffect(() => {
+    if (saving === 0) return;
+    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [saving]);
 
   useEffect(() => {
     const joined = joinRoom({ board: id, token, name: me.actor, onPeers: setPeers, onChange: () => void load(), onStatus: setLive });
@@ -64,6 +92,8 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
   /** Run one write after the one before it, then read the board again and tell the room. */
   const write = useCallback(
     (change: () => Promise<unknown>, failure: string, select?: string) => {
+      pending.current++;
+      setSaving((n) => n + 1);
       queue.current = queue.current.then(async () => {
         try {
           await change();
@@ -71,8 +101,12 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
         } catch (e) {
           toast({ title: failure, description: describe(e), tone: "danger" });
         }
+        pending.current--;
+        // The last write of a run reads the server's board. An earlier one leaves the screen as it is.
+        lastRead.current = 0;
         await load();
         if (select) setSelected(select);
+        setSaving((n) => n - 1);
       });
     },
     [load, toast],
@@ -118,6 +152,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
     );
   }
   const { data: d } = board;
+  const status = saving > 0 ? "Saving…" : "All changes saved";
   const empty = d.nodes.length === 0 && d.edges.length === 0;
 
   return (
@@ -135,6 +170,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
         <ToolbarButton label="Zoom in" icon={icon(<path d="M4 10h12M10 4v12" />)} onClick={() => zoom(1.25)} />
         <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView({ x: 40, y: 40, k: 1 })} />
       </Toolbar>
+      <p className="note" role="status">{editable ? status : ""}</p>
       {!editable && <p className="note">This token can read the board but not change it.</p>}
       <div className="stage" ref={canvasBox}>
         <Canvas data={d} selected={selected} editable={editable} view={view} onView={setView} onSelect={setSelected} onMove={move} onResize={resize} onDelete={remove} />
