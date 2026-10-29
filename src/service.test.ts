@@ -40,7 +40,8 @@ describe("owner repair actor", () => {
 //  8. A client adds a root type or a meta key of its own: a root is refused, a key is deleted.
 //  9. A client adds a key of its own to an element: the key is deleted, on an old element and on a new trusted one.
 // 10. A client writes a title or a title stamp that fails its check, with a trusted stamp or on a board with no title: it is undone.
-// 11. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
+// 11. A client sends the second half of an edit, so Yjs keeps it pending and no check sees it: refused, and the board does not grow.
+// 12. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
 describe("live checkpoint", () => {
   const bot: Principal = { kind: "agent_of_human", id: "helper" };
   const eve: Principal = { kind: "human", id: "eve" };
@@ -155,6 +156,18 @@ describe("live checkpoint", () => {
       expect((await s.read("b")).title).toBe(title);
       expect((await s.state("b")).length).toBeLessThan(1000);
     }
+  });
+
+  test("an update that lacks its earlier part is refused and the board does not grow", async () => {
+    const service = await open();
+    const before = (await service.state("b")).length;
+    const sender = new Y.Doc();
+    sender.getText("evil").insert(0, "first");
+    const base = Y.encodeStateVector(sender);
+    sender.getText("evil").insert(5, "x".repeat(10_000));
+    const second = Y.encodeStateAsUpdate(sender, base); // the half that needs "first"
+    await expect(service.checkpoint("b", second, bot, [bot])).rejects.toMatchObject({ code: "INVALID" });
+    expect((await service.state("b")).length).toBe(before);
   });
 
   test("a garbage update is INVALID, an unknown board is NOT_FOUND, and a connector on a deleted shape goes too", async () => {

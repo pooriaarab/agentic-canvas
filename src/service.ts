@@ -117,6 +117,7 @@ export class CanvasService {
    * Limits: the save corrects the stored board only. The room keeps what its clients wrote, so a client that sees
    * a non-empty `fixed` must join again, or its later edits are lost at the next save. The room remembers its
    * authors for good, so a client may stamp an element with the name of anyone who once sent an update in that room.
+   * A client that adds a root type of its own makes every later save of that room fail, because the room keeps it.
    */
   async checkpoint(id: string, update: Uint8Array, actor: Principal, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
     boardKey(id);
@@ -131,6 +132,8 @@ export class CanvasService {
       } catch {
         throw new CanvasError("INVALID", "the update is not a Yjs update");
       }
+      // An update that lacks its earlier part stays pending. It is no part of the doc to check, but encode writes it out.
+      if (next.doc.store.pendingStructs || next.doc.store.pendingDs) throw new CanvasError("INVALID", "the update is not complete: it needs changes that the board does not have");
       // A root type other than the two a board uses would be stored and sent back to every client for ever.
       const strange = [...next.doc.share.keys()].filter((key) => key !== "elements" && key !== "meta");
       if (strange.length > 0) throw new CanvasError("INVALID", "the update holds data that is not part of a board");
