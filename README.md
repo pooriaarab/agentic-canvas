@@ -360,7 +360,7 @@ old author stays on its elements. Only new writes follow the strict rule.
 | Name | What it is |
 |---|---|
 | `createFileStore(path, options?)`, `openLocalStore(dir)` | A store on one JSON file, or on `canvas.json` in a directory. It is the file store of agentic-identity. |
-| `FileStoreError` | The error for a file that is not a store file. Its `code` is `DAMAGED`. |
+| `FileStoreError` | The error for a file that is not a store file, or a lock that stays held. Its `code` is `DAMAGED` or `LOCKED`. |
 | `FileStoreOptions` (type) | The adapter options. The lock options `lockTimeoutMs` and `staleAfterMs` are gone. |
 | `STORE_FILE` | The file name that `openLocalStore` uses, `canvas.json`. |
 
@@ -438,7 +438,7 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
   `UNAVAILABLE`. A write that clashes with another process is run again, for up to 10 seconds.
   Remove the lock by hand if no process runs. A file written by an older agentic-canvas is
   upgraded in place the first time a store opens it, and an older agentic-canvas cannot read
-  the upgraded file.
+  the upgraded file. Stop older agentic-canvas processes before you upgrade.
 - Node 22 or newer is needed. `agentic-canvas/file-store` exports `createFileStore(path)` and
   `openLocalStore(dir)`.
 - A room remembers its authors for good, so a client can stamp an element with the name of anyone who
