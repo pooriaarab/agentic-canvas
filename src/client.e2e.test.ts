@@ -3,7 +3,7 @@
 // Failure cases, written before the client:
 //  1. A wrong token or a missing token comes back as a generic error, not code UNAUTHORIZED with status 401.
 //  2. A missing board comes back as a success, or as an error without the code NOT_FOUND and status 404.
-//  3. An id with a slash or a space reaches another route.
+//  3. An id with a slash reaches another route.
 //  4. An abort is turned into an API error, or does not stop the call.
 //  5. A network failure is not told apart from an API error.
 //  6. A viewer's write is not refused with FORBIDDEN.
@@ -99,7 +99,7 @@ describe("the remote client", () => {
 
     expect(await failure(human.createBoard({ id: "c1" }))).toMatchObject({ code: "DUPLICATE_ID", status: 409 });
     expect(await failure(human.addShape("c1", { type: "bogus" as never, x: 0, y: 0 }))).toMatchObject({ code: "INVALID", status: 422 });
-    // An id with a slash stays one path segment: it is a missing board, not another route.
+    // An id with a slash stays one path segment: the Worker refuses it as a bad id, and it never reaches another route.
     expect(await failure(human.readBoard("a/svg"))).toMatchObject({ status: 422 });
 
     const viewer = createClient({ baseUrl: worker.url, token: VIEWER });
@@ -128,18 +128,16 @@ describe("the remote client", () => {
     });
     expect(await failure(flaky.addShape("c1", { type: "rect", x: 0, y: 0 }))).toMatchObject({ code: "UNAVAILABLE", status: 503 });
     expect(calls).toBe(1);
+    const html = createClient({ baseUrl: worker.url, token: HUMAN, fetch: async () => new Response("<html>", { status: 200 }) });
+    expect(await failure(html.me())).toMatchObject({ code: "HTTP_ERROR", status: 200 });
     const odd = createClient({ baseUrl: worker.url, token: HUMAN, fetch: async () => new Response("<html>", { status: 502 }) });
     expect(await failure(odd.me())).toMatchObject({ code: "HTTP_ERROR", status: 502 });
   });
 
   test("the built client has no Node imports", () => {
-    // Skipped when the package is not built yet. `ci:local` builds first.
-    let built: string;
-    try {
-      built = readFileSync(new URL("../dist/client.js", import.meta.url), "utf8");
-    } catch {
-      return;
-    }
-    expect(built).not.toMatch(/from ["'](node:|fs|path|crypto|yjs|agentic-)/);
+    // `ci:local` builds first, so a missing file is a failure.
+    const built = readFileSync(new URL("../dist/client.js", import.meta.url), "utf8");
+    expect(built).not.toMatch(/\bimport\b/);
+    expect(built).not.toMatch(/\brequire\(/);
   });
 });

@@ -1,7 +1,7 @@
 // A typed client for the Worker HTTP API. It uses only `fetch`, so it runs in browsers, Workers, and Node 22.
 // It never retries: a 503 says "try again", and the caller decides, because a repeated write can change a board twice.
 import type { BoardData } from "./core/read.js";
-import type { Connector, Endpoint, Shape, ShapeType } from "./core/board.js";
+import type { Connector, Endpoint, ErrorCode, Shape, ShapeType } from "./core/board.js";
 import type { PrincipalKind } from "./core/principal.js";
 
 export interface ClientOptions {
@@ -30,7 +30,6 @@ export interface ShapeInput {
   stroke?: string;
   /** A `data:` URL or a `blob:` ref, for an image. */
   src?: string;
-  groupId?: string;
 }
 
 export interface ConnectorInput {
@@ -56,9 +55,11 @@ export interface ImageInfo {
  * A failed call. `code` is the API error code, such as `NOT_FOUND`, `UNAUTHORIZED`, or `INVALID`. `status` is the HTTP status.
  * A reply that is not the API's error shape has code `HTTP_ERROR`. A call that never got a reply has code `NETWORK` and status 0.
  */
+export type ApiErrorCode = ErrorCode | "UNAUTHORIZED" | "NOT_CONFIGURED" | "TOO_LARGE" | "UNSUPPORTED_TYPE" | "UPGRADE_REQUIRED" | "INTERNAL" | "NETWORK" | "HTTP_ERROR" | (string & {});
+
 export class CanvasApiError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: ApiErrorCode,
     message: string,
     readonly status: number,
   ) {
@@ -123,13 +124,24 @@ export function createClient(options: ClientOptions): CanvasClient {
       if (typeof error?.code === "string") code = error.code;
       if (typeof error?.message === "string") message = error.message;
     } catch {
+      // An abort while the body is read is still the caller's own act.
+      if (call?.signal?.aborted) throw call.signal.reason;
       // Not the API's error shape: keep the HTTP defaults.
     }
     throw new CanvasApiError(code, message, response.status);
   }
 
+  // A reply that is not JSON, such as a proxy page with status 200, is an API error too.
+  const parse = async <T>(response: Response, call?: CallOptions): Promise<T> => {
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      if (call?.signal?.aborted) throw error;
+      throw new CanvasApiError("HTTP_ERROR", "the server did not answer with JSON", response.status);
+    }
+  };
   const json = async <T>(method: string, path: string, body?: unknown, call?: CallOptions): Promise<T> =>
-    (await (await send(method, path, { json: body }, call)).json()) as T;
+    parse<T>(await send(method, path, { json: body }, call), call);
   const bytes = async (response: Response) => new Uint8Array(await response.arrayBuffer());
 
   return {
@@ -142,13 +154,13 @@ export function createClient(options: ClientOptions): CanvasClient {
     drawFlow: (id, text, o) => json("POST", `/boards/${seg(id)}/flow`, { text }, o),
     move: (id, element, dx, dy, o) => json("POST", `/boards/${seg(id)}/move`, { element, dx, dy }, o),
     remove: (id, element, o) => json("DELETE", `/boards/${seg(id)}/elements/${seg(element)}`, undefined, o),
-    uploadImage: async (data, o) => (await send("POST", "/images", { body: data as BodyInit, contentType: "application/octet-stream" }, o)).json() as Promise<ImageInfo>,
+    uploadImage: async (data, o) => parse<ImageInfo>(await send("POST", "/images", { body: data as BodyInit, contentType: "application/octet-stream" }, o), o),
     getImage: async (id, o) => {
       const response = await send("GET", `/images/${seg(id)}`, {}, o);
       return { bytes: await bytes(response), type: response.headers.get("content-type") ?? "application/octet-stream" };
     },
     state: async (id, o) => bytes(await send("GET", `/boards/${seg(id)}/state`, {}, o)),
     checkpoint: async (id, update, o) =>
-      (await send("POST", `/boards/${seg(id)}/checkpoint`, { body: update as BodyInit, contentType: "application/octet-stream" }, o)).json() as Promise<{ elements: number; fixed: string[] }>,
+      parse(await send("POST", `/boards/${seg(id)}/checkpoint`, { body: update as BodyInit, contentType: "application/octet-stream" }, o), o),
   };
 }
