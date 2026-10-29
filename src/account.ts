@@ -6,7 +6,7 @@ import { createSharing, ROLES, type Json, type PrincipalContext, type Store } fr
 import { Board, CanvasError } from "./core/board.js";
 import { principalSchema, type Principal } from "./core/principal.js";
 import { RESOURCE_TYPE } from "./access.js";
-import { CanvasService, fromBase64, isBoardId, isStoreId, toBase64 } from "./service.js";
+import { CanvasService, fromBase64, isBoardId, toBase64 } from "./service.js";
 
 export interface CanvasAccountDeps {
   /** The Store that holds the boards and the sharing records. */
@@ -23,7 +23,7 @@ export interface CanvasAccount {
    * Collections: `boards` (each board the subject is the only owner of, with its elements), `grants` (every role the subject
    * holds on a board), `invites` (made by the subject, with no email), `authored_elements` (made by the subject on a board of someone else, with
    * its `boardId`), `edited_elements` (made by someone else, last edited by the subject: `boardId` and `elementId`), `titles` (boards
-   * of someone else whose title the subject set), and `audit` (entries on a board where the subject acted or was the target of a grant, as stored). It holds no format, version, or time.
+   * of someone else whose title the subject set), and `audit` (entries on a board where the subject acted as the principal, as the root of the chain, or was the target of a grant, as stored). It holds no format, version, or time.
    */
   exportAccount(subject: Principal, deps: CanvasAccountDeps): Promise<Record<CanvasCollection, Json[]>>;
   /**
@@ -107,10 +107,22 @@ async function auditOf(store: Store, subject: Principal): Promise<{ id: string; 
   for (const field of ["principalId", "rootId", "targetId"]) for (const row of await rows(store, "audit", { [field]: subject.id })) found.set(row.id, row);
   const out: { id: string; data: Record<string, unknown> }[] = [];
   for (const row of found.values()) {
-    const { principalId, principalKind, chain, resourceId, targetKind, targetId } = row.data;
-    const mine = isSubject({ kind: principalKind, id: principalId }, subject) || (Array.isArray(chain) && isSubject(chain[0], subject)) || isSubject({ kind: targetKind, id: targetId }, subject);
+    const { principalId, principalKind, chain, rootId, resourceId, targetKind, targetId } = row.data;
+    const mine = isSubject({ kind: principalKind, id: principalId }, subject) || (Array.isArray(chain) ? isSubject(chain[0], subject) : rootId === subject.id) || isSubject({ kind: targetKind, id: targetId }, subject);
     if (!mine || typeof resourceId !== "string" || !isBoardId(resourceId)) continue;
     // A deleted board has no sharing record, and its entries still count. Only a record of another type clears a row.
+    const resource = await store.get("resources", resourceId);
+    if (resource === null || resource.type === RESOURCE_TYPE) out.push(row);
+  }
+  return out;
+}
+
+/** The invites the subject made on a canvas board. An invite on a resource of another type is another app's. */
+async function invitesOf(store: Store, subject: Principal): Promise<{ id: string; data: Record<string, unknown> }[]> {
+  const out: { id: string; data: Record<string, unknown> }[] = [];
+  for (const row of await rows(store, "invites", { createdBy: subject.id })) {
+    const { resourceId } = row.data;
+    if (typeof resourceId !== "string" || !isBoardId(resourceId)) continue;
     const resource = await store.get("resources", resourceId);
     if (resource === null || resource.type === RESOURCE_TYPE) out.push(row);
   }
@@ -152,7 +164,7 @@ export const canvasAccount: CanvasAccount = {
       if (found.titleBy) out.titles.push(...plain([{ boardId: id, title: board.title }]));
     }
     // Invites hold `createdBy` as an id with no kind: ids are unique across kinds in the identity store. The fields are listed, so a new one is not exported by chance.
-    for (const { id, data } of await rows(store, "invites", { createdBy: subject.id })) {
+    for (const { id, data } of await invitesOf(store, subject)) {
       const { resourceId, role, expiresAt, acceptedAt, revokedAt } = data;
       out.invites.push(...plain([{ id, resourceId, role, expiresAt, acceptedAt, revokedAt }]));
     }
@@ -173,7 +185,7 @@ export const canvasAccount: CanvasAccount = {
       await store.put("audit", id, scrub(data, subject) as Record<string, Json>);
       total.audit += 1;
     }
-    for (const { id } of await rows(store, "invites", { createdBy: subject.id })) {
+    for (const { id } of await invitesOf(store, subject)) {
       await store.delete("invites", id);
       total.invites += 1;
     }

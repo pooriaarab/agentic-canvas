@@ -247,7 +247,7 @@ The export is plain JSON in the collections `boards`, `grants`, `invites`, `auth
 - Its audit entries (it acted, or a grant named it) stay with the id set to `(erased)`. The kinds stay, so an entry still says if a machine acted.
 - A second erase counts zero. Stop writes first: a write between export and erase is erased and not exported.
 - The erase reads every stored board to find the subject's elements. It stops with `INVALID` on a board that does not decode.
-- The subject is any principal kind, for example `agent_of_human`: call once for each principal. The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
+- The subject is any principal kind, for example `agent_of_human`: call once for each principal. Invites and audit entries name a principal by id, so `human:ada` and `agent:ada` share them: do not give two principals one id. An audit entry where the subject is only a middle step of the chain is not found. The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
 
 ## UI
 

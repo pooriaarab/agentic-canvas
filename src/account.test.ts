@@ -174,4 +174,13 @@ describe("canvasAccount", () => {
     await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
     await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
   });
+
+  test("leaves the invites of another app alone", async () => {
+    const { store } = await setup();
+    await store.transaction((tx) => tx.put("resources", "doc1", { id: "doc1", type: "docs" }));
+    await store.transaction((tx) => tx.put("invites", "docinv", { id: "docinv", resourceId: "doc1", role: "viewer", createdBy: "ada", handle: "x" }));
+    expect((await canvasAccount.exportAccount(ada, { store })).invites).toHaveLength(2);
+    expect(await canvasAccount.eraseAccount(ada, { store })).toMatchObject({ invites: 2 });
+    expect(await store.get("invites", "docinv")).not.toBeNull();
+  });
 });
