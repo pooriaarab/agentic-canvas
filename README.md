@@ -117,8 +117,9 @@ the direction. Lines that start with `#` or `//` are comments.
   deletes it. A board past the element cap refuses to load or read. A human operator runs
   `repair --drop <element>` to delete elements until it fits.
 - `update` cannot clear a required field. Only `fill` and `stroke` accept `undefined`.
-- Z values stop at ±1e9. After a peer writes the limit, new elements tie at the top, and a
-  front or back move fails with `LIMIT`. Remove the element at the limit to clear it.
+- Z values stop at ±1e9. New elements that pass the limit land at the limit and tie with it.
+  While an element sits at +1e9, a front move fails with `LIMIT`. While one sits at -1e9, a back
+  move fails. Remove every element at the limit to clear it.
 - Delete against connect can leave a connector with a missing end. Readers hide it. `repair()`
   removes it, and `Board.decode` runs `repair()` for you.
 - `move` writes absolute positions. Two peers that move one shape at the same time do not add up:
