@@ -241,9 +241,9 @@ at the same time keep the last write. The board list shows the first 100 boards.
 - A Worker (`agentic-canvas/worker`) under `/api/v1/canvas`. Boards live in D1 and images in R2
   (EU jurisdiction), through the shared `Store` and `Blobs` ports. Set `CANVAS_API_TOKENS`
   (a JSON map of token to `{ actor, kind }`, tokens of 32 characters or more) and `CANVAS_REGION`.
-  Routes: `POST /boards`, `GET /boards/:id`, `DELETE /boards/:id` (an editor deletes the board and erases its live room), `GET /boards/:id/svg`, `POST /boards/:id/shapes`,
+  Routes: `POST /boards`, `GET /boards/:id`, `DELETE /boards/:id`, `GET /boards/:id/svg`, `POST /boards/:id/shapes`,
   `/connectors`, `/flow`, `/move`, `GET /boards`, `PATCH /boards/:id/elements/:element`, `DELETE /boards/:id/elements/:element`, `POST /images`,
-  `GET /images/:id`. An image is stored under the SHA-256 of its bytes, and the reply gives
+  `GET /images/:id`. An editor may delete a board. The Worker also erases its live room. An image is stored under the SHA-256 of its bytes, and the reply gives
   the `blob:` ref for a shape. A busy database or bucket answers 503: try again.
 - Live rooms (`agentic-canvas/live-worker`, on `agentic-realtime`). One Durable Object holds one
   board. A token may carry `"role": "viewer"`: a viewer reads and cannot write. `GET /boards/:id/ws`

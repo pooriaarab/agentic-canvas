@@ -125,6 +125,7 @@ async function run(argv: string[]): Promise<void> {
       return print(await service.move(board, rest[0], num(v.dx) ?? Number.NaN, num(v.dy) ?? Number.NaN, actor()));
     case "delete":
       need(1, "<board>");
+      actor();
       return print(await service.delete(board));
     case "rm":
       need(2, "<board> <element>");

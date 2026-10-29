@@ -191,7 +191,7 @@ export class LiveService implements BoardAccess {
     const response = await call(this.options.server, this.options.token, `/boards/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (!response.ok) throw await refusal(response, "the server refused the request");
     const { deleted } = await json(response);
-    if (typeof deleted !== "string") throw new CanvasError("INVALID", "the server sent a result this client does not know");
+    if (deleted !== id) throw new CanvasError("INVALID", "the server sent a result this client does not know");
     return { deleted };
   }
 
