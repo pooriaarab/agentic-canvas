@@ -4,7 +4,7 @@
 
 **Breaking changes**
 
-- BREAKING: design class prefix is now agd-. The UI reads the `--agd-*` tokens from `agentic-design` ^0.4.0. The old prefix matches EasyList cosmetic rules, so ad blockers hid design-styled controls. Migration: load `agentic-design/tokens.css` from `agentic-design` ^0.4.0, and set your own tokens with the `--agd-` prefix.
+- BREAKING: design class prefix is now agd-. The UI reads the `--agd-*` tokens from `agentic-design` ^0.4.0. The old prefix matches EasyList cosmetic rules, so ad blockers hid design-styled controls. Migration: load `agentic-design/styles.css` from `agentic-design` ^0.4.0, and set your own tokens with the `--agd-` prefix.
 
 ## 0.8.0
 
