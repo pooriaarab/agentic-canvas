@@ -102,12 +102,41 @@ describe("live room", () => {
     expect(stored.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["s1", "s2"]);
     expect(stored.nodes.find((n: { id: string }) => n.id === "s2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
 
-    // A client that writes raw Yjs puts a person on an element the room never heard from. The save deletes it.
+    // A client that writes raw Yjs puts a person on an element it made. The save stamps the element with the principal the room heard it from.
     bot.doc.getMap<Y.Map<unknown>>("elements").set("fake", new Y.Map(Object.entries({ id: "fake", type: "rect", x: 0, y: 0, w: 5, h: 5, text: "", z: 9, author: { kind: "human", id: "mallory" }, editedBy: { kind: "human", id: "mallory" } })));
+    // It also claims Ada's edit on her shape: Ada is in the room, so the old rule would have trusted the claim.
+    bot.doc.getMap<Y.Map<unknown>>("elements").get("s1")!.set("text", "bot text");
+    bot.doc.getMap<Y.Map<unknown>>("elements").get("s1")!.set("editedBy", { kind: "human", id: "ada" });
     await bot.flush();
     const forged = await save(BOT, bot.doc);
-    expect((await forged.json()).fixed).toEqual(["fake"]);
-    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.map((n: { id: string }) => n.id).sort()).toEqual(["s1", "s2"]);
+    expect((await forged.json()).fixed).toEqual(["fake", "s1"]);
+    const nodes = (await (await call("/boards/b1", HUMAN)).json()).nodes;
+    expect(nodes.map((n: { id: string }) => n.id).sort()).toEqual(["fake", "s1", "s2"]);
+    expect(nodes.find((n: { id: string }) => n.id === "fake")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" }, editedBy: { kind: "agent_of_human", id: "helper" } });
+    expect(nodes.find((n: { id: string }) => n.id === "s1")).toMatchObject({ text: "bot text", author: { kind: "human", id: "ada" }, editedBy: { kind: "agent_of_human", id: "helper" }, lastEditMachineMade: true });
+    // A hand save with content the room never had: the agent posts it, so it is the agent's, whatever the stamp says.
+    const ghost = new Board();
+    ghost.addShape({ id: "ghost", type: "rect", x: 3, y: 3 }, { kind: "human", id: "ada" });
+    const posted = await call("/boards/b1/checkpoint", BOT, { method: "POST", body: ghost.encode() as BodyInit });
+    expect((await posted.json()).fixed).toEqual(["ghost"]);
+    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.find((n: { id: string }) => n.id === "ghost")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
+    // A hand save that reuses the Yjs ids of Ada's unsaved edit cannot put its own content under her name: the room's items come first.
+    const before = Y.encodeStateAsUpdate(ada.doc);
+    adaBoard.addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "ada text" }, { kind: "human", id: "ada" });
+    await ada.flush();
+    const twin = new Y.Doc();
+    Y.applyUpdate(twin, before);
+    twin.clientID = ada.doc.clientID;
+    new Board(twin).addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "bot text" }, { kind: "human", id: "ada" });
+    expect((await save(BOT, twin)).status).toBe(200);
+    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.find((n: { id: string }) => n.id === "s4")).toMatchObject({ text: "ada text", machineMade: false });
+    // A hand save under a client id that the room holds for Ada, past her last edit, is refused by the room. It never reaches the Store.
+    const future = new Y.Doc();
+    Y.applyUpdate(future, Y.encodeStateAsUpdate(ada.doc));
+    future.clientID = ada.doc.clientID;
+    new Board(future).addShape({ id: "s5", type: "rect", x: 0, y: 0 }, { kind: "human", id: "ada" });
+    expect((await save(BOT, future)).status).toBe(403);
+    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.some((n: { id: string }) => n.id === "s5")).toBe(false);
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
 
@@ -145,7 +174,9 @@ describe("live room", () => {
     await worker.stop();
     worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
     const after = await (await call("/boards/b2", HUMAN)).json();
-    expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2"]);
+    expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2", "seedfake"]);
+    // The forged seeder stamp is the sender's own: the save stamped it with the agent that wrote it.
+    expect(after.nodes.find((n: { id: string }) => n.id === "seedfake")).toMatchObject({ author: { kind: "agent_of_human", id: "helper" } });
     expect(JSON.stringify(after)).not.toContain("canvas-room");
     expect(after.nodes.find((n: { id: string }) => n.id === "live2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
   }, 180_000);
@@ -159,6 +190,10 @@ describe("live room", () => {
     await bot.flush();
     await call("/boards/b3/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: "rest1", type: "rect", x: 0, y: 0 }) });
     expect((await call("/boards/b3", HUMAN)).status).toBe(200);
+    // A hand save needs a saved room. This one cannot be saved, so the hand save is refused, whatever it holds.
+    const hand = new Board();
+    hand.addShape({ id: "h1", type: "rect", x: 0, y: 0 }, { kind: "human", id: "ada" });
+    expect((await call("/boards/b3/checkpoint", BOT, { method: "POST", body: hand.encode() as BodyInit })).status).toBe(422);
     const late = await enter("b3", HUMAN);
     await until(() => new Board(late.doc).get("rest1") !== undefined, "the room to take the HTTP change");
   }, 120_000);
@@ -166,11 +201,9 @@ describe("live room", () => {
   test("a join is refused, not opened empty, when the stored board is too big to seed", async () => {
     worker = await startWorker({ port: PORT + 3, persistTo, vars: OPEN });
     await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b4" }) });
-    // Random text does not compress: 110 elements of 10,000 characters pass the 1,000,000 bytes one seed message may hold.
-    const big = new Board();
+    // Random text does not compress: 110 elements of 10,000 characters pass the 1,000,000 bytes one seed message may hold. HTTP writes have no such cap.
     const random = () => Array.from(crypto.getRandomValues(new Uint8Array(5000)), (v) => v.toString(16).padStart(2, "0")).join("");
-    for (let i = 0; i < 110; i++) big.addShape({ id: `s${i}`, type: "sticky", x: 0, y: 0, text: random() }, { kind: "human", id: "ada" });
-    expect((await call("/boards/b4/checkpoint", HUMAN, { method: "POST", body: big.encode() as BodyInit })).status).toBe(200);
+    for (let i = 0; i < 110; i++) expect((await call("/boards/b4/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: `s${i}`, type: "sticky", x: 0, y: 0, text: random() }) })).status).toBe(201);
     await expect(enter("b4", HUMAN)).rejects.toThrow();
     expect((await call("/boards/b4", HUMAN)).status).toBe(200);
   }, 120_000);

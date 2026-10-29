@@ -199,8 +199,10 @@ at the same time keep the last write. The board list shows the first 100 boards.
   joins, and saves the room to the stored board before it serves any board read or write. A raw WebSocket
   client needs no seed and no save call. A room that no request reaches stays unsaved in the Store until the
   next request, and it is safe in the room's own storage. `GET /boards/:id/state` and
-  `POST /boards/:id/checkpoint` still work for a client that saves by hand. Every save checks author stamps:
-  a client cannot put another author on its work. A stored board over 1,000,000 bytes cannot seed a room: a live join answers 422 for it.
+  `POST /boards/:id/checkpoint` still work for a client that saves by hand. Every save checks author stamps,
+  and the Worker sets them from the room's log of who sent each update (the token's actor and kind): a client
+  cannot claim another principal, and an agent cannot pass as a person, even by naming one who is in the room.
+  A new item that the log lacks (it keeps a capped number of ranges, and a hand save may hold content the room never had) has no sender: the save deletes a new element and undoes a change. A hand save puts the part of its update that the room lacks into the room as the poster, so the room refuses a client id that it holds for someone else and its log names the poster. It drops the part the room holds, saves the room, and fails if the room cannot be saved. It is one message of 1,000,000 bytes at most. A stored board over 1,000,000 bytes cannot seed a room: a live join answers 422 for it.
 - The SDK joins a room: `import { LiveBoard, LiveService } from "agentic-canvas/live"`. The CLI and the MCP
   server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
   `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.

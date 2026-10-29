@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import { z } from "zod";
-import { principalSchema, type Principal } from "./principal.js";
+import { isMachineMade, principalSchema, type Principal } from "./principal.js";
 
 export type ErrorCode = "INVALID" | "DUPLICATE_ID" | "NOT_FOUND" | "BAD_REFERENCE" | "LIMIT" | "UNAVAILABLE" | "FORBIDDEN";
 
@@ -256,12 +256,66 @@ export class Board {
    * author, and a changed one needs a trusted editor or it goes back to its prior state. An editor stamp changed alone
    * to an untrusted principal is put back. Unknown keys, nested Yjs types, and bad or foreign title values are deleted
    * or undone. Returns the ids it deleted or restored.
+   *
+   * `writer` says who sent the update that holds a Yjs item, or undefined when it does not know. Where it knows, it
+   * decides: a new element gets its creator as author and editor, and an old one gets the sender of its changes as editor.
+   * A client cannot claim another principal, and an agent cannot pass as a person. A new item that the log lacks has no
+   * sender: it is deleted or undone. Only an old item falls back to `trusted`. A hand save names its poster as the sender
+   * of every item that the room does not hold, in `writer`.
    */
-  restamp(prior: Board, trusted: (who: Principal) => boolean): string[] {
+  restamp(prior: Board, trusted: (who: Principal) => boolean, writer?: (item: { client: number; clock: number }) => Principal | undefined): string[] {
     const before = new Map(prior.allStored().map((e) => [e.id, e]));
     const body = ({ author: _a, editedBy: _e, ...rest }: CanvasElement) => JSON.stringify(rest);
     const fixed: string[] = [];
+    // An item is new when the stored board has not seen it. Only a new item can hold something the client made up.
+    const isNew = (item: { client: number; clock: number }) => item.clock >= Y.getState(prior.doc.store, item.client);
+    const who = (item: { client: number; clock: number }) => writer?.(item);
+    // Several writers: a machine among them shows, so an agent's change is not hidden behind a later edit by a person.
+    // Otherwise the editor stamp's own writer wins when it is one of them, so the last editor of two people is kept.
+    const pick = (writers: Principal[], stamped?: Principal) =>
+      writers.find((w) => isMachineMade(w.kind)) ?? (stamped && (writers.length === 0 || writers.some((w) => samePrincipal(w, stamped))) ? stamped : writers[0]);
     this.doc.transact(() => {
+      for (const el of writer ? this.allStored() : []) {
+        const entry = this.elements.get(el.id)!;
+        const was = prior.elements.get(el.id);
+        const by = (key: string) => {
+          const item = entry._map.get(key);
+          return item && !item.deleted ? who(item.id) : undefined;
+        };
+        if (!was) {
+          // A new element has one creator, and its author. Its editor is whoever wrote its keys. If any writer is unknown,
+          // the element cannot be checked, and it goes.
+          const creator = entry._item ? who(entry._item.id) : undefined;
+          const writers = [...entry.keys()].filter((k) => k !== "author" && k !== "editedBy").map(by);
+          if (!creator || writers.some((w) => !w)) this.elements.delete(el.id);
+          else {
+            const editor = pick(writers as Principal[], by("editedBy")) ?? creator;
+            if (samePrincipal(el.author, creator) && samePrincipal(el.editedBy, editor)) continue;
+            entry.set("author", creator);
+            entry.set("editedBy", editor);
+          }
+          fixed.push(el.id);
+          continue;
+        }
+        // An old element: whoever wrote the keys that changed edited it. A deleted key leaves no item, so only an editor stamp
+        // written in this window can name its writer. A change with no known writer goes back to its prior state.
+        const raw = (map: Y.Map<unknown>, key: string) => JSON.stringify(map.get(key));
+        const changed = [...new Set([...entry.keys(), ...was.keys()])].filter((k) => k !== "author" && k !== "editedBy" && raw(entry, k) !== raw(was, k));
+        const found = entry._map.get("editedBy");
+        const stamp = found?.deleted ? undefined : found;
+        const stamped = stamp && isNew(stamp.id) ? who(stamp.id) : undefined;
+        const writers = changed.map((k) => (entry.has(k) ? by(k) : stamped));
+        if (writers.some((w) => !w) || (stamp && isNew(stamp.id) && !stamped)) {
+          this.elements.set(el.id, new Y.Map([...was.entries()]));
+          fixed.push(el.id);
+          continue;
+        }
+        const editor = pick(writers as Principal[], stamped);
+        if (editor && !samePrincipal(el.editedBy, editor)) {
+          entry.set("editedBy", editor);
+          fixed.push(el.id);
+        }
+      }
       for (const el of this.allStored()) {
         const old = before.get(el.id);
         if (!old) {
@@ -290,9 +344,23 @@ export class Board {
       }
       // Compare the raw values: a getter hides a value that fails its check, but the doc still holds it.
       const same = (key: string) => !(this.meta.get(key) instanceof Y.AbstractType) && JSON.stringify(this.meta.get(key)) === JSON.stringify(prior.meta.get(key));
+      let titleBroken = false;
+      if (writer) {
+        const found = this.meta._map.get("title");
+        const titleItem = found?.deleted ? undefined : found;
+        const byItem = this.meta._map.get("titleBy");
+        // Each of the two keys that was written in this window names its writer. A deleted title leaves no item and no writer.
+        const written = [titleItem, byItem?.deleted ? undefined : byItem].filter((item) => item !== undefined && isNew(item.id)).map((item) => who(item!.id));
+        titleBroken = (!titleItem && prior.meta.has("title")) || written.some((w) => !w);
+        const titleWriter = titleBroken ? undefined : pick(written as Principal[]);
+        if (titleWriter && this.titleBy && !samePrincipal(this.titleBy, titleWriter)) {
+          this.meta.set("titleBy", titleWriter);
+          fixed.push("title");
+        }
+      }
       const by = this.titleBy;
       const title = this.meta.get("title");
-      const honest = by !== undefined && trusted(by) && (title === undefined || titleSchema.safeParse(title).success);
+      const honest = !titleBroken && by !== undefined && trusted(by) && (title === undefined || titleSchema.safeParse(title).success);
       if (!honest && !(same("title") && same("titleBy"))) {
         for (const key of ["title", "titleBy"]) {
           const old = prior.meta.get(key);
