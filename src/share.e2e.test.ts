@@ -131,6 +131,13 @@ describe("the typed client", () => {
     });
     const list = await ada.links("l-many");
     expect([list.links.length, list.truncated]).toEqual([200, true]);
+    // Live links come before revoked ones, so a cut keeps the ones that matter.
+    const live = await ada.createLink("l-many", { role: "viewer" });
+    await ada.revokeLink("l-many", "many-0");
+    expect((await ada.links("l-many")).links.some((l) => l.id === live.id)).toBe(true);
+    await store.transaction((tx) => tx.put("links", "odd", { id: "odd", resourceId: "l-odd", role: "owner", tokenHash: "x" }));
+    await ada.createBoard({ id: "l-odd" });
+    expect(await ada.links("l-odd")).toMatchObject({ links: [], truncated: true });
     expect((await ada.links("l-board")).truncated).toBeUndefined();
   });
 

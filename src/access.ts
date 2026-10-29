@@ -179,18 +179,19 @@ export class CanvasAccess {
   async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[]; truncated?: true }> {
     this.known(id);
     await this.require(ctx, "admin", id);
-    const links: LinkSummary[] = [];
+    // Read up to 1000 records, then show live links first: an owner who looks for a leaked link finds it before old revoked ones.
+    const all: LinkSummary[] = [];
     let cursor: string | undefined;
     let cut = false;
-    for (let pages = 0; pages < 10 && links.length < 200; pages++) {
+    for (let pages = 0; pages < 10; pages++) {
       const page = await this.store.query("links", { where: { resourceId: id }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
       for (const { data } of page.items) {
-        if (typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role)) continue;
-        if (links.length >= 200) {
+        // A record that is not a share link is not shown. The list says it is not complete.
+        if (typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role)) {
           cut = true;
-          break;
+          continue;
         }
-        links.push({
+        all.push({
           id: data.id,
           role: data.role as Role,
           signedInOnly: data.signedInOnly === true,
@@ -200,8 +201,12 @@ export class CanvasAccess {
       }
       if ((cursor = page.nextCursor) === undefined) break;
     }
+    const now = this.now();
+    const live = (l: LinkSummary) => l.revokedAt === undefined && (l.expiresAt === undefined || l.expiresAt > now);
+    all.sort((x, y) => Number(live(y)) - Number(live(x)) || (y.expiresAt ?? Infinity) - (x.expiresAt ?? Infinity) || x.id.localeCompare(y.id));
+    const links = all.slice(0, 200);
     // A cut list says so: an owner who looks for a leaked link must know it may be missing.
-    return { links, ...(cut || cursor !== undefined ? { truncated: true as const } : {}) };
+    return { links, ...(cut || cursor !== undefined || all.length > 200 ? { truncated: true as const } : {}) };
   }
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */
