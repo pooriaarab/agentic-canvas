@@ -9,7 +9,7 @@ A shared whiteboard for diagrams, drawn by people and agents.
 
 > Status: 0.3.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
-> and the SDK can join a live room. A remote client calls the Worker API. The web UI is not built yet.
+> and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new and unreleased.
 
 ## Install
 
@@ -110,6 +110,64 @@ There is one method per route: `me`, `listBoards`, `createBoard`, `readBoard`, `
 `CanvasApiError` with the API `code` and the HTTP `status`. A call that gets no reply has code `NETWORK`
 and status 0. The client never retries. A 503 means "try again", and the caller decides, because a
 repeated write can change a board twice. Pass `fetch` to use your own.
+
+## UI
+
+The Worker serves a small web UI at its root. It uses the published `agentic-design` package for
+tokens, controls, and overlays, and the typed `agentic-canvas/client` for every call. It is
+bundled at build time, so a build needs `agentic-design` from npm and the browser loads nothing
+from another site.
+
+Run it on your machine:
+
+```sh
+npm ci
+npm run build                      # writes the UI to ui-dist/
+cat > .dev.vars <<'EOF2'
+CANVAS_REGION=unknown
+CANVAS_API_TOKENS={"ada-token-0123456789-0123456789-0123456789":{"actor":"ada","kind":"human"}}
+EOF2
+WRANGLER_SEND_METRICS=false npx wrangler dev
+```
+
+Open the address that wrangler prints and paste the token. A token has 32 characters or more. Its
+grant sets the name, the kind (a person or an agent), and the role. A `viewer` token reads and
+cannot change a board. The token stays in the tab's session storage.
+
+What it does:
+
+- Lists boards, makes a board, and opens one. Empty, loading, and error states have a retry.
+- Draws shapes, connectors, text, and sticky notes. Select, move, resize, connect, and delete an
+  item. Pan by dragging the background, zoom with the wheel or the toolbar.
+- Marks an item an agent wrote with an "Agent" tag and in its accessible name. The side panel shows
+  who made the item and who last edited it.
+- Shows who is in the board, from the live room (`agentic-realtime`). Edits go over the HTTP API.
+  After a save, the editor raises a counter in its room presence, and the other editors read the
+  board again. The page also reads the board again every 5 seconds, so a change made through the API, the CLI, or an agent shows without a reload, a few seconds late.
+- Works with a keyboard. Tab moves between items. Arrow keys move the selected item, Shift with an
+  arrow resizes it, Delete removes it, Escape clears the selection. With nothing selected, arrow
+  keys pan, `+` and `-` zoom, and `0` resets the view. The side panel also sets text, position, and size,
+  and connects shapes, with fields, and the toolbar has pan buttons. A person who cannot drag
+  can do everything a drag does.
+
+Develop and test the UI:
+
+```sh
+npm run build                      # UI and library
+npx playwright-core install chromium
+npm run test:e2e                   # Playwright against `wrangler dev`, with axe (WCAG 2.2 AA)
+```
+
+The E2E run creates a board, adds a shape and a note, moves them, reloads, and checks each view
+with axe in the light and the dark theme. It saves screenshots to `test-results/screens/`. The committed set in `docs/ui/` shows the UI at this release. Run `UPDATE_SCREENSHOTS=1 npm run test:e2e` to refresh it.
+
+A browser cannot set a header on a WebSocket, so the UI sends its token to the live room as a WebSocket sub-protocol (`Sec-WebSocket-Protocol`). A proxy that logs request headers can record it. The API itself takes the token only in an `Authorization` header, and the sub-protocol only on a WebSocket upgrade.
+
+The UI saves each edit in order, and shows "Saving…" until the last one is stored. It asks the browser to confirm before you leave a page with unsaved edits. It reads the board again at most once a second.
+
+UI limits: the UI draws with the theme colors and ignores the `fill` and `stroke` of an element.
+It shows no image pixels. A text field of a shape is plain text. Two editors who move one item
+at the same time keep the last write. The board list shows the first 100 boards.
 
 ## Features
 

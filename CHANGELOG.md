@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add a web UI served by the Worker, built on `agentic-design`: board list, canvas view, select, move, resize,
+  delete, pan, zoom, live presence, and a marker on agent items. The browser joins the live room with the token
+  as a WebSocket sub-protocol (`agentic-canvas.bearer`), because a browser cannot set a header on a socket.
+  Playwright E2E with axe checks run in `npm run ci:local`.
 - Add `GET /boards` and `PATCH /boards/:id/elements/:element`, the client methods `listBoards` and `update`, the CLI
   commands `list` and `update`, and the MCP tools `list_boards` and `update_element`. They work on the local store
   and in a live room. A list shows the first 100 boards.

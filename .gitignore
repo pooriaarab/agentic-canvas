@@ -6,3 +6,8 @@ coverage/
 .env.local
 .DS_Store
 artifacts/
+ui-dist/
+test-results/
+playwright-report/
+.dev.vars
+.wrangler/
