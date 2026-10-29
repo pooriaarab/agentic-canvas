@@ -69,6 +69,11 @@ describe("identity credentials are the default", () => {
   });
 
   test("canvas:read is a viewer: it reads and cannot write", async () => {
+    // The credential sets the most it may do. The board's owner sets who may reach the board.
+    expect((await call(tokens.eve, "/boards/b1")).status).toBe(404);
+    // ada holds canvas:write, not canvas:admin: she owns the board and still cannot share it with this credential.
+    expect((await call(tokens.ada, "/boards/b1/grants", { method: "POST", body: JSON.stringify({ subjectKind: "human", subjectId: "eve", role: "editor" }) })).status).toBe(403);
+    await store.transaction((tx) => tx.put("grants", "b1:human:eve", { resourceId: "b1", subjectKind: "human", subjectId: "eve", role: "editor" }));
     expect(await (await call(tokens.eve, "/me")).json()).toEqual({ actor: "eve", kind: "human", role: "viewer" });
     expect((await call(tokens.eve, "/boards/b1")).status).toBe(200);
     expect((await call(tokens.eve, "/boards/b1/shapes", { method: "POST", body: JSON.stringify({ type: "rect", x: 0, y: 0 }) })).status).toBe(403);

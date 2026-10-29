@@ -157,6 +157,35 @@ revoked without a new deploy. It ignores revocation in the Store: a static grant
 `ada` after the identity credential of `ada` is revoked. Use it for local work and throwaway demos only. If `CANVAS_API_TOKENS` is set
 and the switch is not, every API request gets 503 `NOT_CONFIGURED`, so a deploy never trusts the list by accident.
 
+## Sharing
+
+A board is an `agentic-identity` resource of type `canvas`. The person or agent that makes a board owns it.
+Roles, from least to most: `viewer`, `commenter`, `editor`, `owner`.
+
+| Role | May do |
+|---|---|
+| viewer, commenter | Read the board, its SVG, and join its live room to read. A board has no comments yet, so a commenter reads as a viewer. |
+| editor | Also draw: add, update, move, and remove elements. |
+| owner | Also delete the board, grant and revoke roles, list access, invite, and make or revoke share links. |
+
+A role never exceeds the scopes of the credential. An agent of an owner holds the owner's role only inside its own
+scopes: it needs `canvas:admin` to share, and `canvas:write` to draw. A caller with no role on a board gets 404, so a read or a write tells a stranger nothing. (A create with an id that is taken answers 409.) A caller with a role that is too low gets 403. `GET /boards` lists the boards you hold a role on.
+
+HTTP routes, under `/api/v1/canvas`. Each needs a bearer token, except the link read:
+
+| Route | Does |
+|---|---|
+| `GET /boards/:id/access` | Owner. The grants and the invites. An invite shows no email. |
+| `POST /boards/:id/grants` | Owner. Body `{ subjectKind: "human" or "agent", subjectId, role }`. |
+| `DELETE /boards/:id/grants?subjectKind=&subjectId=` | Owner. Revoke. The last owner cannot be removed. |
+| `POST /boards/:id/invites` | Owner. Body `{ role, email }` or `{ role, handle }`, and optional `expiresInMs`. The role is not `owner`. Returns `{ id }`. |
+| `POST /invites/accept` | Body `{ id }`. The caller must be the person (verified email) or the agent (handle) the invite names. |
+| `POST /boards/:id/links` | Owner. Body `{ role, signedInOnly?, expiresInMs? }`. Returns `{ id, token }`. The token shows once. |
+| `DELETE /boards/:id/links/:link` | Owner. Revoke a link of this board. |
+| `GET /shared/:id` and `GET /shared/:id/svg` | No bearer token needed. Send the link token in `x-link-token`. Read only. |
+
+The static dev fallback holds no board roles. Its tokens reach every board and cannot share.
+
 ## UI
 
 The Worker serves a small web UI at its root. It uses the published `agentic-design` package for
@@ -377,8 +406,12 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 ## Limits
 
 - Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.6.
-  It does not use the sharing API yet: every principal with `canvas:write` reaches every board. When it adopts sharing, grants are keyed
-  on kind and id, and a delete calls `deleteResource`.
+- A board made before sharing has no owner. Identity credentials get 404 on it. Only the dev fallback reaches it. Make it again, or add its
+  `canvas` resource and an owner grant with `agentic-identity`.
+- An image is stored under the hash of its bytes, not under a board. Any credential with `canvas:read` can fetch an image if it knows the hash.
+- A link visitor reads the stored board, which a live room saves at its next save. It cannot load `blob:` images.
+- A revoke, or a grant of viewer or commenter, closes the live sockets of the person or agent whose role changed. An agent that acts for that person keeps its socket until it joins again.
+- A link visitor reads. A link never writes. Links are not listed: the token shows once, at creation.
 - A board holds at most 10,000 elements. A flow holds at most 500 nodes and 2,000
   edges.
 - Flow text has no chains (`A -> B -> C`). Write one edge per line.

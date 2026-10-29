@@ -64,13 +64,13 @@ export class CanvasService {
   /** The first 100 boards (the store sorts by id), with titles. A board whose stored bytes are damaged shows an empty title: it stays in the list so a person can find and repair it. */
   async list(): Promise<{ id: string; title: string }[]> {
     const page = await this.store.query(COLLECTION, { limit: 100 }).catch(storeFailure);
-    return page.items.map(({ id, data }) => {
-      try {
-        return { id, title: decodeStored(data, id, Board.decode).title };
-      } catch {
-        return { id, title: "" };
-      }
-    });
+    return page.items.map(({ id, data }) => summary(id, data));
+  }
+
+  /** The listed boards that exist, with titles, in the order given. */
+  async summaries(ids: string[]): Promise<{ id: string; title: string }[]> {
+    const found = await Promise.all(ids.map(async (id) => ({ id, data: await this.store.get(COLLECTION, id).catch(storeFailure) })));
+    return found.flatMap(({ id, data }) => (data ? [summary(id, data)] : []));
   }
 
   /** Delete a board and everything on it. Throws NOT_FOUND unless the board exists. The Worker erases the live room too. */
@@ -215,6 +215,14 @@ export class CanvasService {
     const doc = await read;
     if (!doc) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
     return decodeStored(doc, id, Board.decode);
+  }
+}
+
+function summary(id: string, data: { update?: unknown }): { id: string; title: string } {
+  try {
+    return { id, title: decodeStored(data, id, Board.decode).title };
+  } catch {
+    return { id, title: "" };
   }
 }
 
