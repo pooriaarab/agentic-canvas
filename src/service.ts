@@ -113,6 +113,10 @@ export class CanvasService {
    * An element stamped by anyone else is deleted, and a changed author is put back (see `Board.restamp`),
    * so a client that writes raw Yjs cannot put another author on its work. Broken entries are repaired and
    * a board past the element cap is refused. Returns the ids the checks fixed.
+   *
+   * Limits: the save corrects the stored board only. The room keeps what its clients wrote, so a client that sees
+   * a non-empty `fixed` must join again, or its later edits are lost at the next save. The room remembers its
+   * authors for good, so a client may stamp an element with the name of anyone who once sent an update in that room.
    */
   async checkpoint(id: string, update: Uint8Array, actor: Principal, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
     boardKey(id);
