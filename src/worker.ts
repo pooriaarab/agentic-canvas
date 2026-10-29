@@ -291,7 +291,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const who = await identify(c.req.raw, c.env, store);
     if (!who) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
     // Accepting an invite writes no board: a read-only credential may still take its share.
-    if (who.role === "viewer" && c.req.method !== "GET" && !c.req.path.endsWith("/invites/accept")) return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
+    if (who.role === "viewer" && c.req.method !== "GET" && !(c.req.method === "POST" && c.req.path === "/api/v1/canvas/invites/accept")) return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
     c.set("actor", who.actor);
     c.set("role", who.role);
     c.set("caller", who);
