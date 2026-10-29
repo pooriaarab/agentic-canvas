@@ -71,7 +71,7 @@ describe("canvasAccount", () => {
     const { store } = await setup();
     const out = await canvasAccount.exportAccount(ada, { store });
     expect(out.boards.map((b: any) => b.id)).toEqual(["mine"]);
-    expect((out.boards[0] as any).nodes.map((e: any) => e.id)).toEqual(["m1"]);
+    expect((out.boards[0] as any).elements.map((e: any) => e.id)).toEqual(["m1"]);
     expect(out.grants.map((g: any) => `${g.resourceId}:${g.role}`).sort()).toEqual(["bobs:editor", "joint:owner", "mine:owner"]);
     expect(out.authored_elements.map((e: any) => `${e.boardId}:${e.element.id}`).sort()).toEqual(["bobs:a1", "bobs:a2", "bobs:ac", "bobs:g"]);
     expect(out.edited_elements).toEqual([{ boardId: "bobs", elementId: "b1" }, { boardId: "bobs", elementId: "b2" }]);
@@ -189,14 +189,44 @@ describe("canvasAccount", () => {
     expect(await store.get("invites", "docinv")).not.toBeNull();
   });
 
-  test("refuses an export that would leave out damaged entries of a board it then erases, and a bad eraseRoom", async () => {
+  test("exports an owned board as stored: full images, whole groups, damaged entries, and refuses a bad hook", async () => {
     const { store } = await setup();
+    const src = `data:image/png;base64,${"A".repeat(300)}`;
     const doc = new Board();
-    doc.addShape({ id: "ok", type: "rect", x: 0, y: 0 }, ada);
+    doc.addShape({ id: "img", type: "image", x: 0, y: 0, w: 10, h: 10, src }, ada);
+    doc.addShape({ id: "s2", type: "rect", x: 0, y: 0 }, ada);
+    doc.group(["img", "s2"], ada, "grp");
     // A shape with no size fails the element checks, so a read drops it.
     doc.doc.getMap<Y.Map<unknown>>("elements").set("bad", new Y.Map<unknown>([["id", "bad"], ["type", "rect"]]));
     await store.transaction((tx) => tx.put("boards", "mine", { update: toBase64(doc.encode()) }));
-    await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    const [board] = (await canvasAccount.exportAccount(ada, { store })).boards as any[];
+    expect(board.elements.find((e: any) => e.id === "img").src).toBe(src);
+    expect(board.elements.find((e: any) => e.id === "grp")).toMatchObject({ type: "group", author: ada });
+    expect(board.elements.map((e: any) => e.id)).toContain("bad");
     await expect(canvasAccount.eraseAccount(ada, { store, eraseRoom: "x" as never })).rejects.toMatchObject({ code: "INVALID" });
+    await expect(canvasAccount.exportAccount(ada, { store, saveRoom: 1 as never })).rejects.toMatchObject({ code: "INVALID" });
+  });
+
+  test("saves a room before it reads a board, and resets only the boards it changes", async () => {
+    const { store, service } = await setup();
+    const saved: string[] = [];
+    const reset: string[] = [];
+    // A live edit that only the room holds: the hook writes it to the Store, as a Worker pull does.
+    const saveRoom = async (id: string) => {
+      saved.push(id);
+      if (id === "other" && !saved.slice(0, -1).includes("other")) await service.add("other", { id: "late", type: "rect", x: 0, y: 0 }, ada);
+    };
+    const out = await canvasAccount.exportAccount(ada, { store, saveRoom });
+    expect(out.authored_elements.map((e: any) => e.element.id)).toContain("late");
+    await canvasAccount.eraseAccount(ada, { store, saveRoom, eraseRoom: async (id) => void reset.push(id) });
+    expect(new Set(saved)).toEqual(new Set(["mine", "joint", "bobs", "other"]));
+    expect(new Set(reset)).toEqual(new Set(["mine", "bobs", "other"]));
+    expect((await service.read("other")).nodes.map((e) => e.id)).toEqual(["o1"]);
+  });
+
+  test("stops on a damaged invite of the subject", async () => {
+    const { store } = await setup();
+    await store.transaction((tx) => tx.put("invites", "badinv", { id: "badinv", role: "viewer", createdBy: "ada" }));
+    await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
   });
 });

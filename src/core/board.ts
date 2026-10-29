@@ -430,9 +430,9 @@ export class Board {
     return plan.map(([memberId]) => memberId);
   }
 
-  /** How many entries the board stores, valid or not. */
-  get entryCount(): number {
-    return this.elements.size;
+  /** Every stored entry as it is, valid or not, with its key as `id`. */
+  rawElements(): Record<string, unknown>[] {
+    return [...this.elements].map(([key, entry]) => ({ ...(entry instanceof Y.Map ? entry.toJSON() : {}), id: key }));
   }
 
   /**

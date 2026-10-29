@@ -236,18 +236,27 @@ A host that runs a person's data export and erase imports `canvasAccount` from `
 
 ```ts
 import { canvasAccount } from "agentic-canvas/account";
-const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { store, eraseRoom });
-const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, eraseRoom });
+const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
+const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
 ```
 
 The export is plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
 
-- A board that the subject alone owns is deleted with its grants, invites, links, and audit entries. `eraseRoom(boardId)` erases its live room first: give it when rooms run.
+- A board that the subject alone owns is deleted with its grants, invites, links, and audit entries. The erase calls `eraseRoom(boardId)` first, as the Worker does.
 - On any other board, the subject's grant and invites go. The elements it made are deleted. A connector of someone else that was bound to one of them goes too, and no count or export lists it. The members of a deleted group move to its parent. The editor of an element it only edited becomes `(erased)`, and a title it set is cleared.
 - Its audit entries (it acted, it roots the chain, or a grant named it) stay with the id set to `(erased)`. The kinds stay, so an entry still says if a machine acted.
 - A second erase counts zero. Stop writes first: a write between export and erase is erased and not exported.
-- The erase reads every stored board to find the subject's elements. It stops with `INVALID` on a board that does not decode.
-- The subject is any principal kind, for example `agent_of_human`: call once for each principal. Invites and audit entries name a principal by id, so `human:ada` and `agent:ada` share them: do not give two principals one id. An audit entry where the subject is only a middle step of the chain is not found. An invite that someone else made for the subject's email or handle stays: the package cannot map a principal to an address. Image bytes in the image store have no uploader record, so they are not exported or erased: only the `blob:` key in an element is. The export of a board the subject owns alone stops with `INVALID` when the board holds damaged entries. A connector of someone else that the subject edited and that goes with a deleted shape is in `edited_elements` of the export, and not in its erase count. The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
+- The erase reads every stored board to find the subject's elements, before it changes anything. It stops with `INVALID` on a board that does not decode, on a damaged grant of the subject, and on a damaged invite of the subject.
+- Live rooms: give `saveRoom(boardId)`, which saves the room to the Store as the Worker does before a read. Without it, edits that no request has saved yet are not seen, and the reset below drops them. Give `eraseRoom(boardId)` too: the erase calls it for every board that it changes or deletes, so the room opens again from the Store.
+- `boards` holds each stored entry as it is, with full images and groups.
+- The subject is any principal kind, for example `agent_of_human`: call once for each principal. The id follows the strict identity rule: an old board that has an id from the older, looser rule cannot be named.
+- Known gaps:
+  - Invites and audit entries name a principal by id with no kind, so `human:ada` and `agent:ada` share them. Do not give two principals one id.
+  - An audit entry where the subject is only a middle step of the chain is not found.
+  - An invite that someone else made for the subject's email or handle stays. The package cannot map a principal to an address.
+  - Image bytes in the image store have no uploader record, so they are not exported or erased. Only the `blob:` key in an element is.
+  - A connector of someone else that the subject edited, and that goes with a deleted shape, is in `edited_elements` of the export and not in its erase count.
+- The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
 
 ## UI
 
