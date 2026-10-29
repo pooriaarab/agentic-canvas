@@ -4,6 +4,7 @@
 
 **Changed**
 
+- Breaking for a deploy that sets `CANVAS_API_TOKENS`: it answers 503 until you issue `agentic-identity` credentials, or set `CANVAS_UNSAFE_STATIC_TOKENS=1` for a dev setup.
 - The Worker signs requests in with `agentic-identity` credentials in the Store by default. The principal's scopes set the role: `canvas:write` is an editor, `canvas:read` a viewer.
 - `CANVAS_API_TOKENS` is a dev fallback. It is read only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. A Worker that sets the list without the switch answers 503 `NOT_CONFIGURED`.
 - `authenticate(request, env, store?)` takes the Store as an optional third argument.

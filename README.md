@@ -131,27 +131,30 @@ npx wrangler secret put CANVAS_API_TOKENS -c wrangler.demo.jsonc   # only to set
 `wrangler.demo.jsonc` holds the config. The demo is a throwaway: it turns on the dev fallback (see "Auth") and
 signs in with a static token list. The tokens are a Worker secret and are not in the repo. To run your
 own copy, create a D1 database and an R2 bucket (both in the EU), put their names and id in a copy of that
-file, and deploy it the same way.
+file, and deploy it the same way. Remove `CANVAS_UNSAFE_STATIC_TOKENS` from your copy unless it is a throwaway.
 
 ## Auth
 
-The Worker signs requests in with `agentic-identity` (`agentic-identity/http`). A bearer key, or an access
-token, is a credential in the same Store as the boards (D1). It names a principal, and the principal's scopes
-set the role:
+The Worker signs requests in with `agentic-identity` (`agentic-identity/http`). A bearer key (an `api_key` or
+`pat` credential) is a credential in the same Store as the boards (D1). A `session` credential works as a
+bearer key too, and as the `session` cookie for reads. A write or a socket that rides on the cookie gets 403,
+because the Worker lists no allowed origins. A credential names a principal, and the principal's scopes set the role:
 
-- `canvas:write` (or `*:admin`) is an editor.
-- `canvas:read` is a viewer. A viewer reads and cannot change a board, over HTTP or in a live room.
+- Any scope that covers `canvas:write`, such as `canvas:write`, `canvas:admin`, `*:write`, or `*:admin`, is an editor.
+- Any scope that covers `canvas:read`, such as `canvas:read` or `*:read`, is a viewer. A viewer reads and cannot change a board, over HTTP or in a live room.
 - A principal with neither scope, an unknown, expired, or revoked credential, or a revoked parent in the
   delegation chain, gets 401.
 
-Make principals and credentials in the database of the Worker with `agentic-identity` (its Worker, or
-`issueCredential` from its SDK). The author kind of every write is the kind of the principal.
+Make principals and credentials in the database of this Worker with `agentic-identity` (its Worker, or
+`issueCredential` from its SDK). The two must share one D1 database and its schema (`D1_SCHEMA`). A credential
+that lives in another database gets 401 here. The author kind of every write is the kind of the principal.
 A browser sends its credential as the WebSocket sub-protocol `agentic-canvas.bearer.<token in base64url>`.
 
 **Dev fallback.** `CANVAS_API_TOKENS` is a static list of tokens, as JSON: `{ "<token>": { "actor": "ada", "kind": "human", "role": "viewer" } }`.
 It is read only when `CANVAS_UNSAFE_STATIC_TOKENS=1` is set too. Then it adds to the identity credentials: a
 token that is not a credential is looked up in the list. A static token reaches every board and cannot be
-revoked without a new deploy, so use it for local work and throwaway demos only. If `CANVAS_API_TOKENS` is set
+revoked without a new deploy. It ignores revocation in the Store: a static grant named `ada` still writes as
+`ada` after the identity credential of `ada` is revoked. Use it for local work and throwaway demos only. If `CANVAS_API_TOKENS` is set
 and the switch is not, every API request gets 503 `NOT_CONFIGURED`, so a deploy never trusts the list by accident.
 
 ## UI

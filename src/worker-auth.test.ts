@@ -50,6 +50,8 @@ beforeAll(async () => {
 });
 afterAll(() => mf.dispose());
 
+// A D1 whose queries fail, except the schema check. It makes the credential lookup fail.
+const brokenDb = (message: string) => ({ ...db, prepare: (sql: string) => (sql === D1_SCHEMA ? db.prepare(sql) : { bind: () => ({ first: () => Promise.reject(new Error(message)), all: () => Promise.reject(new Error(message)), run: () => Promise.reject(new Error(message)) }) }) }) as unknown as D1Like;
 const env = (extra: Record<string, string> = {}) => ({ DB: db, IMAGES: bucket, CANVAS_REGION: "unknown", ...extra }) as never;
 const call = (token: string | null, path: string, init: RequestInit = {}, vars?: Record<string, string>) =>
   app.fetch(new Request(`http://x/api/v1/canvas${path}`, { ...init, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "application/json" } }), env(vars));
@@ -96,6 +98,12 @@ describe("identity credentials are the default", () => {
     const broken = { ...store, get: () => Promise.reject(new Error("D1_ERROR: busy")) } as Store;
     const request = new Request("http://x/", { headers: { authorization: `Bearer ${tokens.ada}` } });
     await expect(authenticate(request, {} as never, broken)).rejects.toThrow("D1_ERROR: busy");
+  });
+
+  test("a store that fails answers 503 for a busy database and 500 for another error, never 401", async () => {
+    const fail = (message: string) => app.fetch(new Request("http://x/api/v1/canvas/me", { headers: { authorization: `Bearer ${tokens.ada}` } }), { ...(env() as object), DB: brokenDb(message) } as never);
+    expect((await fail("D1_ERROR: database is busy")).status).toBe(503);
+    expect((await fail("something else")).status).toBe(500);
   });
 
   test("the static list is no way in by default", async () => {
