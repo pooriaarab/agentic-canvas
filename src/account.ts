@@ -201,7 +201,11 @@ export const canvasAccount: CanvasAccount = {
       if (found.authored.length > 0 || found.edited.length > 0 || found.titleBy) stamped.push(id);
     }
     // The sharing erase refuses a board that has child resources. Refuse here, before the first delete, so a retry can finish.
-    for (const id of mine.sole) if ((await rows(store, "resources", { parentId: id })).length > 0) throw new CanvasError("INVALID", `board "${id}" has child resources: remove them first`);
+    // It also checks that the sharing erase accepts the subject as owner: a grant under an old key is found here and refused there.
+    for (const id of mine.sole) {
+      if ((await rows(store, "resources", { parentId: id })).length > 0) throw new CanvasError("INVALID", `board "${id}" has child resources: remove them first`);
+      if (!(await sharing.can(ctx, "admin", id)).allowed) throw new CanvasError("INVALID", `the owner grant on board "${id}" is not valid: an operator repairs it first`);
+    }
     // Audit first: the entries of a board that goes below are removed with it, and a repeat after a failure still finds the rest.
     for (const { id, data } of await auditOf(store, subject)) {
       await store.put("audit", id, scrub(data, subject) as Record<string, Json>);
@@ -217,7 +221,7 @@ export const canvasAccount: CanvasAccount = {
       await store.delete("boards", id);
       await deps.eraseRoom?.(id);
       await sharing.deleteResource(ctx, id).catch((e: unknown) => {
-        if (e instanceof Error && e.name === "EraseRefusedError") throw new CanvasError("INVALID", e.message);
+        if (e instanceof Error && (e.name === "EraseRefusedError" || e.message === "forbidden")) throw new CanvasError("INVALID", e.message);
         throw e;
       });
       total.boards += 1;

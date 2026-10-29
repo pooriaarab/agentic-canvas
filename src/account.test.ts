@@ -237,4 +237,16 @@ describe("canvasAccount", () => {
     expect((await service.read("mine")).id).toBe("mine");
     expect((await store.query("invites", { where: { createdBy: "ada" }, limit: 5 })).items).toHaveLength(2);
   });
+
+  test("refuses before any change when the owner grant is under an old key", async () => {
+    const { store, service } = await setup();
+    const grant = await store.get("grants", "mine:human:ada");
+    await store.transaction(async (tx) => {
+      await tx.delete("grants", "mine:human:ada");
+      await tx.put("grants", "mine:ada", grant!);
+    });
+    await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    expect((await service.read("mine")).id).toBe("mine");
+    expect((await store.query("invites", { where: { createdBy: "ada" }, limit: 5 })).items).toHaveLength(2);
+  });
 });
