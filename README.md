@@ -38,7 +38,7 @@ npx agentic-canvas export demo --out demo.svg
 npx agentic-canvas export demo --format png --out demo.png
 ```
 
-Other commands: `list`, `add`, `connect`, `update`, `move`, `rm`, `delete` (a whole board), and `access`, `grant`, `revoke`, `invite` (sharing, server only). Run `npx agentic-canvas --help`.
+Other commands: `list`, `add`, `connect`, `update`, `move`, `rm`, `delete` (a whole board), and `access`, `grant`, `revoke`, `invite`, `links`, `link`, `revoke-link` (sharing, server only). Run `npx agentic-canvas --help`.
 `repair` is for the owner only. It needs `CANVAS_ACTOR=human:<id>`.
 Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
 needs an actor in `CANVAS_ACTOR`, as `<kind>:<id>`. The operator sets it. A write
@@ -52,7 +52,7 @@ CANVAS_ACTOR=agent:helper npx agentic-canvas --dir ./boards mcp
 ```
 
 The server speaks MCP on stdio. It has one tool for each CLI command: `create_board`,
-`delete_board`, `list_boards`, `read_board`, `add_shape`, `connect`, `update_element`, `move`, `remove`, `draw_flow`, `export_svg`, `export_png`, and the sharing tools `list_access`, `grant_access`, `revoke_access`, and `create_invite`. `repair` is not a tool. Only a human operator runs it, from the CLI. The server will not start unless `CANVAS_ACTOR` is set to a valid
+`delete_board`, `list_boards`, `read_board`, `add_shape`, `connect`, `update_element`, `move`, `remove`, `draw_flow`, `export_svg`, `export_png`, and the sharing tools `list_access`, `grant_access`, `revoke_access`, `create_invite`, `list_links`, `create_link`, and `revoke_link`. `repair` is not a tool. Only a human operator runs it, from the CLI. The server will not start unless `CANVAS_ACTOR` is set to a valid
 `<kind>:<id>`. That actor stamps every write. No tool takes an actor, author, or kind, so a
 caller cannot choose who it writes as. An error comes back as a tool error with a code.
 
@@ -179,6 +179,7 @@ HTTP routes, under `/api/v1/canvas`. Each needs a bearer token, except the link 
 | `DELETE /boards/:id/grants?subjectKind=&subjectId=` | Owner. Revoke. The last owner cannot be removed. |
 | `POST /boards/:id/invites` | Owner. Body `{ role, email }` or `{ role, handle }`, and optional `expiresInMs`. The role is not `owner`. Returns `{ id }`. |
 | `POST /invites/accept` | Body `{ id }`. The caller must be the person (verified email) or the agent (handle) the invite names. |
+| `GET /boards/:id/links` | Owner. The links of the board: `{ id, role, signedInOnly, expiresAt?, revokedAt? }`. No token. |
 | `POST /boards/:id/links` | Owner. Body `{ role, signedInOnly?, expiresInMs? }`. Returns `{ id, token }`. The token shows once. |
 | `DELETE /boards/:id/links/:link` | Owner. Revoke a link of this board. |
 | `GET /shared/:id` and `GET /shared/:id/svg` | No bearer token needed. Send the link token in `x-link-token`. Read only. |
@@ -194,6 +195,9 @@ await canvas.grant("demo", { subjectKind: "agent", subjectId: "helper", role: "e
 await canvas.invite("demo", { role: "viewer", email: "ada@example.com", expiresInMs: 86_400_000 });
 const { grants, invites } = await canvas.access("demo"); // an invite shows no email
 await canvas.revoke("demo", { subjectKind: "agent", subjectId: "helper" });
+const link = await canvas.createLink("demo", { role: "viewer", expiresInMs: 86_400_000 }); // link.token shows once
+const { links } = await canvas.links("demo"); // no tokens
+await canvas.revokeLink("demo", link.id);
 ```
 
 ```sh
@@ -202,11 +206,14 @@ npx agentic-canvas access demo
 npx agentic-canvas grant demo agent:helper --role editor
 npx agentic-canvas invite demo --role viewer --handle helper --expires-in-ms 86400000
 npx agentic-canvas revoke demo agent:helper
+npx agentic-canvas link demo --role viewer --expires-in-ms 86400000   # prints the token once
+npx agentic-canvas links demo
+npx agentic-canvas revoke-link demo <link-id>
 ```
 
-With `CANVAS_SERVER` set, `npx agentic-canvas mcp` serves `list_access`, `grant_access`, `revoke_access`, and `create_invite` as well.
+With `CANVAS_SERVER` set, `npx agentic-canvas mcp` serves `list_access`, `grant_access`, `revoke_access`, `create_invite`, `list_links`, `create_link`, and `revoke_link` as well.
 Each prints or returns the server's JSON. A refusal has the server's code, such as `NOT_FOUND`, `FORBIDDEN`, or `INVALID`.
-Share links and invite acceptance stay on the HTTP API.
+Invite acceptance stays on the HTTP API.
 
 A live MCP server with an admin token can share boards: an agent that holds it can grant `owner` and revoke grants. Give an agent a token with `canvas:write` only, unless it must share.
 

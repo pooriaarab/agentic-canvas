@@ -5,6 +5,15 @@ import { isBoardId, isStoreId } from "./service.js";
 /** The identity resource type of a board. Scopes read `canvas:<action>`. */
 export const RESOURCE_TYPE = "canvas";
 export { ROLES, SUBJECT_KINDS };
+/** A share link without its token. `revokedAt` is set once the link is revoked. */
+export interface LinkSummary {
+  id: string;
+  role: Role;
+  signedInOnly: boolean;
+  expiresAt?: number;
+  revokedAt?: number;
+}
+
 export type { Grant, InviteSummary, Role, Subject };
 
 /** The roles an invite or a link may give. Only a grant makes an owner. */
@@ -164,6 +173,29 @@ export class CanvasAccess {
     const expiresInMs = lifetime(input.expiresInMs, "expiresInMs");
     if (input.signedInOnly !== undefined && typeof input.signedInOnly !== "boolean") throw new CanvasError("INVALID", "signedInOnly must be true or false");
     return this.sharing.createLink(ctx, id, { role, signedInOnly: input.signedInOnly === true, ...(expiresInMs === undefined ? {} : { expiresAt: this.now() + expiresInMs }) }).catch(refuse);
+  }
+
+  /** The links of a board. A summary never holds the token or its hash. Needs an owner. */
+  async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[] }> {
+    this.known(id);
+    await this.require(ctx, "admin", id);
+    const links: LinkSummary[] = [];
+    let cursor: string | undefined;
+    for (let pages = 0; pages < 10 && links.length < 200; pages++) {
+      const page = await this.store.query("links", { where: { resourceId: id }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
+      for (const { data } of page.items) {
+        if (links.length >= 200 || typeof data.id !== "string" || !(ROLES as readonly unknown[]).includes(data.role)) continue;
+        links.push({
+          id: data.id,
+          role: data.role as Role,
+          signedInOnly: data.signedInOnly === true,
+          ...(typeof data.expiresAt === "number" ? { expiresAt: data.expiresAt } : {}),
+          ...(typeof data.revokedAt === "number" ? { revokedAt: data.revokedAt } : {}),
+        });
+      }
+      if ((cursor = page.nextCursor) === undefined) break;
+    }
+    return { links };
   }
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */

@@ -47,7 +47,7 @@ describe("tools", () => {
     const client = await connect(fresh());
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     await client.close();
-    expect(names).toEqual(["add_shape", "connect", "create_board", "create_invite", "delete_board", "draw_flow", "export_png", "export_svg", "grant_access", "list_access", "list_boards", "move", "read_board", "remove", "revoke_access", "update_element"]);
+    expect(names).toEqual(["add_shape", "connect", "create_board", "create_invite", "create_link", "delete_board", "draw_flow", "export_png", "export_svg", "grant_access", "list_access", "list_boards", "list_links", "move", "read_board", "remove", "revoke_access", "revoke_link", "update_element"]);
   });
 
   test("deletes a board, and a second delete is a NOT_FOUND tool error", async () => {
@@ -202,7 +202,7 @@ describe("sharing tools with a client from another bundle", () => {
     const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
     const { createMcpServer } = await import("./mcp.js");
     const refused = Object.assign(new Error("only an owner shares"), { name: "CanvasApiError", code: "FORBIDDEN", status: 403 });
-    const sharing = { access: async () => Promise.reject(refused), grant: async () => Promise.reject(refused), revoke: async () => Promise.reject(refused), invite: async () => Promise.reject(refused) };
+    const sharing = { access: async () => Promise.reject(refused), grant: async () => Promise.reject(refused), revoke: async () => Promise.reject(refused), invite: async () => Promise.reject(refused), links: async () => Promise.reject(refused), createLink: async () => Promise.reject(refused), revokeLink: async () => Promise.reject(refused) };
     const server = createMcpServer({} as never, { kind: "human", id: "ada" }, sharing);
     const [a, b] = InMemoryTransport.createLinkedPair();
     const client = new McpClient({ name: "test", version: "0" });

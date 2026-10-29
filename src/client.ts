@@ -59,6 +59,24 @@ export interface BoardGrant {
   role: BoardRole;
   [field: string]: unknown;
 }
+/** A share link of a board. It never shows the token: the token shows once, when the link is made. */
+export interface BoardLink {
+  id: string;
+  role: Exclude<BoardRole, "owner">;
+  signedInOnly: boolean;
+  expiresAt?: number;
+  revokedAt?: number;
+}
+
+export interface LinkInput {
+  /** Not `owner`: only a grant makes an owner. */
+  role: Exclude<BoardRole, "owner">;
+  /** Only a signed-in visitor may use the link. */
+  signedInOnly?: boolean;
+  /** How long the link lives, in milliseconds. */
+  expiresInMs?: number;
+}
+
 /** An open invite. It never shows the email. */
 export interface BoardInvite {
   id: string;
@@ -131,6 +149,12 @@ export interface CanvasClient {
   revoke(id: string, input: Subject, options?: CallOptions): Promise<{ ok: true }>;
   /** Invite a person by email or an agent by handle. Returns the invite id. Needs the owner role. */
   invite(id: string, input: InviteInput, options?: CallOptions): Promise<{ id: string }>;
+  /** The share links of a board, without their tokens. Needs the owner role. */
+  links(id: string, options?: CallOptions): Promise<{ links: BoardLink[] }>;
+  /** Make a share link. The token comes back once and is never stored. Needs the owner role. */
+  createLink(id: string, input: LinkInput, options?: CallOptions): Promise<{ id: string; token: string }>;
+  /** Revoke a share link. Needs the owner role. */
+  revokeLink(id: string, linkId: string, options?: CallOptions): Promise<{ ok: true }>;
   uploadImage(bytes: Uint8Array | ArrayBuffer | Blob, options?: CallOptions): Promise<ImageInfo>;
   /** The bytes of a stored image, and its content type. */
   getImage(id: string, options?: CallOptions): Promise<{ bytes: Uint8Array; type: string }>;
@@ -141,7 +165,7 @@ export interface CanvasClient {
 }
 
 /** What the CLI and the MCP server need to share a board. Sharing lives on the server, so it needs a client. */
-export type BoardSharing = Pick<CanvasClient, "access" | "grant" | "revoke" | "invite">;
+export type BoardSharing = Pick<CanvasClient, "access" | "grant" | "revoke" | "invite" | "links" | "createLink" | "revokeLink">;
 
 /** `kind:id` of a person or an agent, as the CLI and the tools write it. */
 export function parseSubject(text: string): Subject {
@@ -220,6 +244,9 @@ export function createClient(options: ClientOptions): CanvasClient {
     grant: (id, input, o) => json("POST", `/boards/${seg(id)}/grants`, input, o),
     revoke: (id, { subjectKind, subjectId }, o) => json("DELETE", `/boards/${seg(id)}/grants?subjectKind=${seg(subjectKind)}&subjectId=${seg(subjectId)}`, undefined, o),
     invite: (id, input, o) => json("POST", `/boards/${seg(id)}/invites`, input, o),
+    links: (id, o) => json("GET", `/boards/${seg(id)}/links`, undefined, o),
+    createLink: (id, input, o) => json("POST", `/boards/${seg(id)}/links`, input, o),
+    revokeLink: (id, linkId, o) => json("DELETE", `/boards/${seg(id)}/links/${seg(linkId)}`, undefined, o),
     uploadImage: async (data, o) => parse<ImageInfo>(await send("POST", "/images", { body: data as BodyInit, contentType: "application/octet-stream" }, o), o),
     getImage: async (id, o) => {
       const response = await send("GET", `/images/${seg(id)}`, {}, o);

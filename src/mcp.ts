@@ -154,6 +154,24 @@ export function createMcpServer(service: BoardAccess, actor: Principal, sharing?
     },
     tool(async ({ board: b, ...input }) => json(await shared().invite(b, input))),
   );
+  server.registerTool(
+    "list_links",
+    { description: "List the share links of a board, without their tokens. Needs the owner role.", inputSchema: { board }, annotations: read },
+    tool(async (a) => json(await shared().links(a.board))),
+  );
+  server.registerTool(
+    "create_link",
+    {
+      description: "Make a share link that lets anyone with the token read a board. The token shows once: keep it. The role is not owner. Needs the owner role.",
+      inputSchema: { board, role: z.enum(["viewer", "commenter", "editor"]), signedInOnly: z.boolean().optional(), expiresInMs: z.number().optional() },
+    },
+    tool(async ({ board: b, ...input }) => json(await shared().createLink(b, input))),
+  );
+  server.registerTool(
+    "revoke_link",
+    { description: "Revoke a share link of a board. Needs the owner role.", inputSchema: { board, link: z.string() }, annotations: { destructiveHint: true } },
+    tool(async (a) => json(await shared().revokeLink(a.board, a.link))),
+  );
   return server;
 }
 
