@@ -744,3 +744,33 @@ describe("owner repair", () => {
     expect(Board.open(seeded().encode()).repair()).toEqual([]);
   });
 });
+
+// One id rule per actor: a new write names an actor by the identity kernel rule. A board that holds an older, looser id
+// still reads, and the old author stays.
+describe("actor id rule", () => {
+  test.each(["a".repeat(129), "", "a b", "a:b", "é", "x/y"])("a write as the id %j fails", (id) => {
+    const board = new Board();
+    expect(code(() => board.addShape(rect(), { kind: "human", id }))).toBe("INVALID");
+    expect(code(() => board.setTitle("t", { kind: "human", id }))).toBe("INVALID");
+    expect(board.list()).toEqual([]);
+  });
+
+  test("a write as an id of 128 characters, or with a dot, works", () => {
+    const board = new Board();
+    board.addShape(rect(), { kind: "human", id: "a".repeat(128) });
+    board.addShape(rect(), { kind: "agent", id: "bot.v1" });
+    expect(board.list()).toHaveLength(2);
+  });
+
+  test("a stored element with an older id still reads, and a new write keeps it as the author", () => {
+    const board = new Board();
+    board.addShape({ id: "old", ...rect() }, human);
+    const old = { kind: "human", id: "Ada Lovelace <ada@example.com>" };
+    board.doc.getMap<Y.Map<unknown>>("elements").get("old")!.set("author", old);
+    board.doc.getMap<Y.Map<unknown>>("elements").get("old")!.set("editedBy", old);
+    expect(board.get("old")?.author).toEqual(old);
+    board.update("old", { text: "hi" }, agent);
+    expect(board.get("old")).toMatchObject({ text: "hi", author: old, editedBy: agent });
+    expect(Board.decode(board.encode()).get("old")?.author).toEqual(old);
+  });
+});

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import { z } from "zod";
-import { isMachineMade, principalSchema, type Principal } from "./principal.js";
+import { isMachineMade, principalSchema, storedPrincipalSchema, type Principal } from "./principal.js";
 
 export type ErrorCode = "INVALID" | "DUPLICATE_ID" | "NOT_FOUND" | "BAD_REFERENCE" | "LIMIT" | "UNAVAILABLE" | "FORBIDDEN";
 
@@ -105,8 +105,8 @@ const stampFields = {
   id,
   z: z.number().finite().min(-MAX_Z).max(MAX_Z),
   groupId: id.optional(),
-  author: principalSchema,
-  editedBy: principalSchema,
+  author: storedPrincipalSchema,
+  editedBy: storedPrincipalSchema,
 };
 const storedShape = z
   .object({ ...stampFields, type: z.enum(SHAPE_TYPES), x: coord, y: coord, w: size, h: size, text, fill: color.optional(), stroke: color.optional(), src: imageSrc.optional() })
@@ -196,7 +196,7 @@ export class Board {
   }
 
   get titleBy(): Principal | undefined {
-    const value = principalSchema.safeParse(this.meta.get("titleBy"));
+    const value = storedPrincipalSchema.safeParse(this.meta.get("titleBy"));
     return value.success ? value.data : undefined;
   }
 
