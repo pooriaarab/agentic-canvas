@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import { z } from "zod";
 import { principalSchema, type Principal } from "./principal.js";
@@ -298,11 +299,12 @@ export class Board {
   group(ids: string[], actor: Principal, groupId?: string): Group {
     const by = parse(principalSchema, actor);
     const members = parse(z.array(id).min(2).max(MAX_ELEMENTS), ids);
+    const gid = parse(id.optional(), groupId);
     if (new Set(members).size !== members.length) throw new CanvasError("INVALID", "member ids repeat");
     const parents = new Set(members.map((m) => this.require(m).groupId));
     if (parents.size > 1) throw new CanvasError("BAD_REFERENCE", "members must share one parent group");
     const [parent] = parents;
-    const group = this.create({ type: "group", id: groupId, groupId: parent }, by) as Group;
+    const group = this.create({ type: "group", id: gid, groupId: parent }, by) as Group;
     this.write(members.map((m) => [m, { groupId: group.id }]), by);
     return group;
   }
@@ -389,7 +391,7 @@ export class Board {
 
   private create(fields: Record<string, unknown> & { id?: string }, actor: Principal): CanvasElement {
     const by = parse(principalSchema, actor);
-    const elementId = fields.id ?? crypto.randomUUID();
+    const elementId = fields.id ?? randomUUID();
     if (this.elements.has(elementId)) throw new CanvasError("DUPLICATE_ID", `element "${elementId}" already exists`);
     if (this.elements.size >= this.maxElements) throw new CanvasError("LIMIT", `a board holds at most ${this.maxElements} elements`);
     const record = { ...fields, id: elementId, z: this.edgeZ(1), author: by, editedBy: by };

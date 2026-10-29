@@ -177,6 +177,13 @@ describe("groups", () => {
     board.group(["a", "b"], human);
     expect(code(() => board.group(["a", "c"], human))).toBe("BAD_REFERENCE");
   });
+  test.each(["bad id!", "x".repeat(65)])("refuses the group id %s and writes nothing", (groupId) => {
+    const board = setup();
+    const before = board.list().map((e) => e.id);
+    expect(code(() => board.group(["a", "b"], human, groupId))).toBe("INVALID");
+    expect(board.list().map((e) => e.id)).toEqual(before);
+    expect(board.get("a")?.groupId).toBeUndefined();
+  });
   test("nests, and ungroup hands members back to the parent group", () => {
     const board = setup();
     board.addShape(rect(0, 0, { id: "d" }), human);
