@@ -35,6 +35,16 @@ function boardKey(id: string): string {
   return id;
 }
 
+/** True if the store accepts `id` as a board id. A caller's id that fails this names no board. */
+export function isBoardId(id: string): boolean {
+  try {
+    boardKey(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Give a store failure the code a caller can act on. Other errors pass through. */
 function storeFailure(error: unknown): never {
   if (error instanceof StoreConflictError) throw new CanvasError("UNAVAILABLE", "the board changed at the same time. Try again");

@@ -355,3 +355,17 @@ describe("live rooms", () => {
     expect((await call(tokens.dee!, "GET", "/boards/lv/%E0%A4%A")).status).toBe(403);
   });
 });
+
+describe("ids the Store would refuse", () => {
+  // A board id, a link id, or an invite id that the Store refuses must not end as a 500.
+  test.each(["a%2Fb", "__x__", "a%20b", "x".repeat(65)])("board id %s is 404 on every route", async (id) => {
+    for (const [method, path] of [["GET", `/boards/${id}`], ["DELETE", `/boards/${id}`], ["GET", `/boards/${id}/access`], ["POST", `/boards/${id}/links`], ["DELETE", `/boards/${id}/grants?subjectKind=human&subjectId=bob`]] as const) {
+      expect([path, (await call(tokens.ada!, method, path, method === "POST" ? { role: "viewer" } : undefined)).status]).toEqual([path, 404]);
+    }
+  });
+
+  test("a bad link id is 404, and a bad invite id is 403", async () => {
+    expect((await call(tokens.ada!, "DELETE", "/boards/lv/links/a%2Fb")).status).toBe(404);
+    expect((await call(tokens.ada!, "POST", "/invites/accept", { id: "a/b" })).status).toBe(403);
+  });
+});
