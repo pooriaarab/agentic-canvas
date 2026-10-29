@@ -5,32 +5,40 @@
   .note { color: var(--agd-color-text-muted); }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  .board { display: grid; gap: var(--agd-space-3); }
-  .stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 16rem; gap: var(--agd-space-3); height: 65vh; min-height: 22rem; }
+  .board { display: grid; gap: var(--agd-space-4); }
+  .heading { display: grid; gap: var(--agd-space-1); }
+  .heading h1, .heading .note { margin: 0; }
+  .heading .note { font-size: var(--agd-font-size-sm); min-height: 1.25em; }
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 15rem; gap: var(--agd-space-4); height: 68vh; min-height: 24rem; }
+  /* The palette and the zoom controls float on the canvas, so the page keeps one calm surface. They come before the canvas, so Tab reaches them first. */
+  .surface { position: relative; min-height: 18rem; }
+  .palette, .zoom { position: absolute; z-index: 1; left: var(--agd-space-3); max-width: calc(100% - 2 * var(--agd-space-3)); }
+  .palette { top: var(--agd-space-3); }
+  .zoom { bottom: var(--agd-space-3); }
+  .palette .agd-toolbar, .zoom .agd-toolbar { flex-wrap: wrap; box-shadow: var(--agd-shadow-raised); }
+  .canvas { height: 100%; box-sizing: border-box; background-color: var(--agd-color-surface); background-image: radial-gradient(var(--agd-color-border) 1px, transparent 1px); background-size: 24px 24px; border: 1px solid var(--agd-color-border); border-radius: var(--agd-radius-lg); overflow: hidden; touch-action: none; min-height: 18rem; }
   @media (max-width: 48rem) { .stage { grid-template-columns: 1fr; height: auto; } .canvas { height: 55vh; } }
-  .canvas { background: var(--agd-color-surface-sunken); border: 1px solid var(--agd-color-border); border-radius: var(--agd-radius-md); overflow: hidden; touch-action: none; min-height: 18rem; }
   .canvas:focus-visible { outline: 3px solid var(--agd-color-focus); outline-offset: 2px; }
   .canvas svg { display: block; cursor: grab; font-family: var(--agd-font-family-sans); font-size: 14px; }
   .item { outline: none; cursor: pointer; }
-  .shape { fill: var(--agd-color-surface-raised); stroke: var(--agd-color-border-strong); stroke-width: 1.5; }
+  .shape { fill: var(--agd-color-surface-raised); stroke: var(--agd-color-border-strong); stroke-width: 1; }
   .shape.text { fill: transparent; stroke: none; }
   .shape.frame, .shape.image { fill: none; stroke-dasharray: 6 4; pointer-events: visiblePainted; }
   .shape.sticky { fill: var(--agd-color-warning-subtle); stroke: var(--agd-color-warning); }
   .label { fill: var(--agd-color-text); pointer-events: none; }
   .sticky-label { fill: var(--agd-color-warning-text); }
-  .edge { stroke: var(--agd-color-text-muted); stroke-width: 2; fill: none; pointer-events: none; }
+  .edge { stroke: var(--agd-color-text-muted); stroke-width: 1.5; fill: none; pointer-events: none; }
   .hit { stroke: transparent; stroke-width: 14; }
   .arrowhead { fill: var(--agd-color-text-muted); }
-  .edge-text { fill: var(--agd-color-text); paint-order: stroke; stroke: var(--agd-color-surface-sunken); stroke-width: 4px; pointer-events: none; }
+  .edge-text { fill: var(--agd-color-text); paint-order: stroke; stroke: var(--agd-color-surface); stroke-width: 4px; pointer-events: none; }
   .ring, .ring-line { fill: none; stroke: none; stroke-width: 3; pointer-events: none; }
   .item.selected .ring, .item.selected .ring-line, .item:focus-visible .ring, .item:focus-visible .ring-line { stroke: var(--agd-color-focus); }
   .item:focus-visible .ring, .item:focus-visible .ring-line { stroke-width: 4; }
   .handle { fill: var(--agd-color-focus); stroke: var(--agd-color-bg); stroke-width: 2; cursor: nwse-resize; }
   .agent-badge rect { fill: var(--agd-color-agent-subtle); stroke: var(--agd-color-agent); }
   .agent-badge text { fill: var(--agd-color-agent-text); font-size: 11px; font-weight: 600; pointer-events: none; }
-  .empty-overlay { position: absolute; inset: 0 16rem 0 0; display: grid; place-items: center; pointer-events: none; }
-  @media (max-width: 48rem) { .empty-overlay { inset: 0; bottom: auto; height: 55vh; } }
-  .inspector { border: 1px solid var(--agd-color-border); border-radius: var(--agd-radius-md); padding: var(--agd-space-3); background: var(--agd-color-surface); display: grid; gap: var(--agd-space-3); align-content: start; overflow: auto; }
+  .empty-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .inspector { border: 1px solid var(--agd-color-border); border-radius: var(--agd-radius-lg); padding: var(--agd-space-4); background: var(--agd-color-surface); display: grid; gap: var(--agd-space-3); align-content: start; overflow: auto; }
   .inspector h2 { margin: 0; font-size: var(--agd-font-size-lg); }
   .inspector form { display: grid; gap: var(--agd-space-3); }
   .inspector .by { margin: 0; color: var(--agd-color-text-muted); font-size: var(--agd-font-size-sm); }
