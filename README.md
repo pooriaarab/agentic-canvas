@@ -208,6 +208,8 @@ With `CANVAS_SERVER` set, `npx agentic-canvas mcp` serves `list_access`, `grant_
 Each prints or returns the server's JSON. A refusal has the server's code, such as `NOT_FOUND`, `FORBIDDEN`, or `INVALID`.
 Share links and invite acceptance stay on the HTTP API.
 
+A live MCP server with an admin token can share boards: an agent that holds it can grant `owner` and revoke grants. Give an agent a token with `canvas:write` only, unless it must share.
+
 The static dev fallback holds no board roles. Its tokens reach every board and cannot share.
 
 ## UI

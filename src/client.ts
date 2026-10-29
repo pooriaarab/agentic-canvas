@@ -54,7 +54,7 @@ export interface Subject {
   subjectId: string;
 }
 export interface BoardGrant {
-  subjectKind: string;
+  subjectKind: SubjectKind;
   subjectId: string;
   role: BoardRole;
   [field: string]: unknown;

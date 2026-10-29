@@ -134,7 +134,7 @@ export function createMcpServer(service: BoardAccess, actor: Principal, sharing?
   );
   server.registerTool(
     "grant_access",
-    { description: "Give a person or an agent a role on a board. Needs the owner role.", inputSchema: { board, subjectKind: kind, subjectId: z.string(), role: z.enum(["viewer", "commenter", "editor", "owner"]) } },
+    { description: "Give a person or an agent a role on a board. A lower role replaces a higher one. Needs the owner role.", inputSchema: { board, subjectKind: kind, subjectId: z.string(), role: z.enum(["viewer", "commenter", "editor", "owner"]) }, annotations: { destructiveHint: true } },
     tool(async ({ board: b, ...input }) => json(await shared().grant(b, input))),
   );
   server.registerTool(

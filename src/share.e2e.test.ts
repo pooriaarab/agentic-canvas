@@ -113,8 +113,8 @@ describe("the typed client", () => {
 
   test("escapes a board id, so it reaches no other route", async () => {
     const error = await failure(client("ada").access("a/grants?x=1"));
-    expect(error).toMatchObject({ status: expect.any(Number) });
-    expect([404, 422]).toContain((error as { status: number }).status);
+    // The id stays one path segment, so the server looks for a board with that name and finds none.
+    expect(error).toMatchObject({ code: "NOT_FOUND", status: 404 });
   });
 });
 
