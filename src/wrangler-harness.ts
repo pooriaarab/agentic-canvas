@@ -25,23 +25,23 @@ export async function startWorker(options: { port: number; persistTo: string; va
   let log = "";
   for (const stream of [server.stdout, server.stderr]) stream?.on("data", (chunk: Buffer) => (log = (log + chunk.toString()).slice(-2000)));
   let exitReason: string | undefined;
-  const exited = new Promise<void>((resolve) => server.once("exit", (code, signal) => ((exitReason = `code ${code ?? signal}`), resolve())));
+  const exited = new Promise<void>((resolve) => server.once("close", (code, signal) => ((exitReason = code === null ? `signal ${signal}` : `code ${code}`), resolve())));
+  // A process that already exited is gone, which is what stop wants: ESRCH is not an error.
+  const signalGroup = (name: NodeJS.Signals) => {
+    try {
+      if (server.pid === undefined) server.kill(name);
+      else process.kill(-server.pid, name);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  };
   // A Worker that is still running holds its port, and the next one would answer from the old process.
   const stop = async () => {
     const gone = (ms: number) => Promise.race([exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms))]);
     // Wrangler starts workerd and esbuild. A signal to the whole group stops them too.
-    // A process that already exited is gone, which is what stop wants: ESRCH is not an error.
-    const signal = (name: NodeJS.Signals) => {
-      try {
-        if (server.pid === undefined) server.kill(name);
-        else process.kill(-server.pid, name);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-    };
-    signal("SIGTERM");
+    signalGroup("SIGTERM");
     if (await gone(10_000)) return;
-    signal("SIGKILL");
+    signalGroup("SIGKILL");
     if (!(await gone(5_000))) throw new Error(`wrangler dev on port ${port} did not stop`);
   };
   const deadline = Date.now() + 90_000;
@@ -52,7 +52,7 @@ export async function startWorker(options: { port: number; persistTo: string; va
     } catch {
       if (exitReason !== undefined) {
         // The leader is gone, but workerd may still hold the ports.
-        await stop();
+        signalGroup("SIGKILL");
         throw new Error(`wrangler dev exited with ${exitReason} before it started. Last output: ${log}`);
       }
       if (Date.now() > deadline) {
