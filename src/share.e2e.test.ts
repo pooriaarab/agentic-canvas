@@ -142,10 +142,23 @@ describe("the typed client", () => {
     await store.transaction(async (tx) => {
       await tx.put("links", "bad-revoked", { id: "bad-revoked", resourceId: "l-odd", role: "viewer", tokenHash: "x", revokedAt: true });
       await tx.put("links", "bad-expiry", { id: "bad-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: "soon" });
+      await tx.put("links", "null-expiry", { id: "null-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: null });
       await tx.put("links", "key-a", { id: "key-b", resourceId: "l-odd", role: "viewer", tokenHash: "x" });
     });
-    expect(await ada.links("l-odd")).toEqual({ links: [{ id: "bad-revoked", role: "viewer", signedInOnly: false, revokedAt: 0 }], skipped: 3 });
+    const odd = await ada.links("l-odd");
+    expect(odd.links.map((l) => l.id).sort()).toEqual(["bad-revoked", "null-expiry"]);
+    expect(odd.links.find((l) => l.id === "null-expiry")).toEqual({ id: "null-expiry", role: "viewer", signedInOnly: false });
+    expect(odd.skipped).toBe(3);
     expect((await ada.links("l-board")).truncated).toBeUndefined();
+  });
+
+  test("a list reads at most 1000 records and says it was cut", async () => {
+    await client("ada").createBoard({ id: "l-huge" });
+    await store.transaction(async (tx) => {
+      for (let i = 0; i < 1001; i++) await tx.put("links", `huge-${i}`, { id: `huge-${i}`, resourceId: "l-huge", role: "viewer", tokenHash: "x", revokedAt: 1 });
+    });
+    const list = await client("ada").links("l-huge");
+    expect([list.links.length, list.truncated]).toEqual([200, true]);
   });
 
   test("a non-owner and a stranger cannot use links, and bad input has a code", async () => {
