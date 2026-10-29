@@ -43,6 +43,10 @@
       "types": "./dist/worker.d.ts",
       "import": "./dist/worker.js"
     },
+    "./live-worker": {
+      "types": "./dist/live-worker.d.ts",
+      "import": "./dist/live-worker.js"
+    },
     "./file-store": {
       "types": "./dist/store-file.d.ts",
       "import": "./dist/store-file.js"
@@ -61,7 +65,8 @@
   "dependencies": {
     "@dagrejs/dagre": "^3.1.3",
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "agentic-identity": "^0.2.0",
+    "agentic-identity": "^0.3.0",
+    "agentic-realtime": "^0.1.0",
     "yjs": "^13.6.0",
     "zod": "^3.25.0"
   },

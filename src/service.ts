@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import { assertId, StoreConflictError, type Store } from "agentic-identity";
 import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
@@ -7,6 +8,8 @@ import { toSvg } from "./core/svg.js";
 import { FileStoreError } from "./store-errors.js";
 
 const COLLECTION = "boards";
+/** The most a stored board may hold after a save. A room holds 1.5 MB at most, and Yjs keeps the keys of deleted entries. */
+export const MAX_LIVE_BYTES = 1_572_864;
 const BOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function toBase64(bytes: Uint8Array): string {
@@ -54,6 +57,12 @@ export class CanvasService {
     });
   }
 
+  /** Throws NOT_FOUND unless the board exists. A live room opens only for a board that exists. */
+  async assertExists(id: string): Promise<void> {
+    boardKey(id);
+    if (!(await this.store.transaction((tx) => tx.get(COLLECTION, id)))) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
+  }
+
   async read(id: string): Promise<BoardData & { id: string }> {
     boardKey(id);
     return this.store.transaction(async (tx) => ({ id, ...readBoard(await this.load(tx.get(COLLECTION, id), id)) }));
@@ -93,6 +102,49 @@ export class CanvasService {
   async exportSvg(id: string): Promise<string> {
     boardKey(id);
     return this.store.transaction(async (tx) => toSvg(await this.load(tx.get(COLLECTION, id), id)));
+  }
+
+  /** The stored board as a Yjs update. A client applies it to a room to seed it: the room does not read it. */
+  async state(id: string): Promise<Uint8Array> {
+    boardKey(id);
+    return this.store.transaction(async (tx) => (await this.load(tx.get(COLLECTION, id), id)).encode());
+  }
+
+  /**
+   * Merge a live room's state into the stored board. `authors` are the principals the room saw send updates.
+   * An element stamped by anyone else is deleted, and a changed author is put back (see `Board.restamp`),
+   * so a client that writes raw Yjs cannot put another author on its work. Broken entries are repaired and
+   * a board past the element cap is refused. Returns the ids the checks fixed.
+   *
+   * Limits: the save corrects the stored board only. The room keeps what its clients wrote, so a client that sees
+   * a non-empty `fixed` must join again, or its later edits are lost at the next save. The room remembers its
+   * authors for good, so a client may stamp an element with the name of anyone who once sent an update in that room.
+   * A client that adds a root type of its own makes every later save of that room fail, because the room keeps it.
+   */
+  async checkpoint(id: string, update: Uint8Array, actor: Principal, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
+    boardKey(id);
+    const by = principalSchema.safeParse(actor);
+    if (!by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
+    const trusted = (who: Principal) => [by.data, ...authors].some((a) => a.kind === who.kind && a.id === who.id);
+    return this.store.transaction(async (tx) => {
+      const prior = await this.load(tx.get(COLLECTION, id), id);
+      const next = prior.clone();
+      try {
+        Y.applyUpdate(next.doc, update);
+      } catch {
+        throw new CanvasError("INVALID", "the update is not a Yjs update");
+      }
+      // An update that lacks its earlier part stays pending. It is no part of the doc to check, but encode writes it out.
+      if (next.doc.store.pendingStructs || next.doc.store.pendingDs) throw new CanvasError("INVALID", "the update is not complete: it needs changes that the board does not have");
+      // A root type other than the two a board uses would be stored and sent back to every client for ever.
+      const strange = [...next.doc.share.keys()].filter((key) => key !== "elements" && key !== "meta");
+      if (strange.length > 0) throw new CanvasError("INVALID", "the update holds data that is not part of a board");
+      const fixed = new Set([...next.restamp(prior, trusted), ...next.repair()]);
+      const saved = next.encode();
+      if (saved.length > MAX_LIVE_BYTES) throw new CanvasError("LIMIT", `the board would hold over ${MAX_LIVE_BYTES} bytes`);
+      await tx.put(COLLECTION, id, { update: toBase64(saved) });
+      return { elements: next.list().length, fixed: [...fixed].sort() };
+    });
   }
 
   /** Owner only. Repair a board and delete the named elements. Only a human actor may call it. */

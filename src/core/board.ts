@@ -137,6 +137,7 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
 const isBindable = (type: unknown): boolean => typeof type === "string" && type !== "connector" && type !== "group";
 const isValidZ = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= MAX_Z;
 const clampZ = (value: number): number => Math.min(MAX_Z, Math.max(-MAX_Z, value));
+const samePrincipal = (a: Principal, b: Principal): boolean => a.kind === b.kind && a.id === b.id;
 const hasId = (e: unknown): e is { id: string } => typeof e === "object" && e !== null && typeof (e as { id?: unknown }).id === "string";
 
 /**
@@ -247,6 +248,66 @@ export class Board {
       loose.forEach((l) => (this.elements.get(l) as Y.Map<unknown> | undefined)?.delete("groupId"));
     });
     return [...new Set([...doomed, ...detached, ...loose])].sort();
+  }
+
+  /**
+   * Make the author stamps of a merged board honest. `prior` is the board before the merge, and `trusted` says whether
+   * a principal really wrote in this session. A new element stamped by anyone else is deleted. An old element keeps its
+   * author, and a changed one needs a trusted editor or it goes back to its prior state. An editor stamp changed alone
+   * to an untrusted principal is put back. Unknown keys, nested Yjs types, and bad or foreign title values are deleted
+   * or undone. Returns the ids it deleted or restored.
+   */
+  restamp(prior: Board, trusted: (who: Principal) => boolean): string[] {
+    const before = new Map(prior.allStored().map((e) => [e.id, e]));
+    const body = ({ author: _a, editedBy: _e, ...rest }: CanvasElement) => JSON.stringify(rest);
+    const fixed: string[] = [];
+    this.doc.transact(() => {
+      for (const el of this.allStored()) {
+        const old = before.get(el.id);
+        if (!old) {
+          if (trusted(el.author) && trusted(el.editedBy)) continue;
+          this.elements.delete(el.id);
+        } else {
+          const entry = this.elements.get(el.id)!;
+          const authorKept = samePrincipal(el.author, old.author);
+          const editorOk = trusted(el.editedBy) || samePrincipal(el.editedBy, old.editedBy);
+          const changed = body(el) !== body(old);
+          if (authorKept && editorOk && !(changed && !trusted(el.editedBy))) continue;
+          if (changed && !trusted(el.editedBy)) this.elements.set(el.id, new Y.Map(Object.entries(old).filter(([, v]) => v !== undefined)));
+          else {
+            if (!authorKept) entry.set("author", old.author);
+            if (!editorOk) entry.set("editedBy", old.editedBy);
+          }
+        }
+        fixed.push(el.id);
+      }
+      for (const el of this.allStored()) {
+        const entry = this.elements.get(el.id)!;
+        // A nested Yjs type reads as plain data but can hold more, such as an embed, so no field may be one.
+        const extra = [...entry.keys()].filter((key) => !(key in el) || entry.get(key) instanceof Y.AbstractType);
+        extra.forEach((key) => entry.delete(key));
+        if (extra.length > 0 && !fixed.includes(el.id)) fixed.push(el.id);
+      }
+      // Compare the raw values: a getter hides a value that fails its check, but the doc still holds it.
+      const same = (key: string) => !(this.meta.get(key) instanceof Y.AbstractType) && JSON.stringify(this.meta.get(key)) === JSON.stringify(prior.meta.get(key));
+      const by = this.titleBy;
+      const title = this.meta.get("title");
+      const honest = by !== undefined && trusted(by) && (title === undefined || titleSchema.safeParse(title).success);
+      if (!honest && !(same("title") && same("titleBy"))) {
+        for (const key of ["title", "titleBy"]) {
+          const old = prior.meta.get(key);
+          if (old === undefined) this.meta.delete(key);
+          else this.meta.set(key, old);
+        }
+        fixed.push("title");
+      }
+      for (const key of [...this.meta.keys()]) {
+        if (key === "title" || key === "titleBy") continue;
+        this.meta.delete(key);
+        fixed.push(`meta:${key}`);
+      }
+    });
+    return fixed;
   }
 
   addShape(input: unknown, actor: Principal): Shape {
