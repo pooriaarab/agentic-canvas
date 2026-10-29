@@ -725,6 +725,13 @@ describe("owner repair", () => {
     expect(code(() => opened.repair(["zz"]))).toBe("NOT_FOUND");
     expect(opened.encode()).toEqual(before);
   });
+  test("drop names an entry that fails the checks: it is removed without error", () => {
+    const board = seeded();
+    board.doc.transact(() => board.doc.getMap("elements").set("bad", new Y.Map(Object.entries({ id: "bad", type: "script" }))));
+    const opened = Board.open(board.encode());
+    expect(opened.repair(["bad"])).toEqual(["bad"]);
+    expect(opened.doc.getMap("elements").has("bad")).toBe(false);
+  });
   test("a board past the cap refuses repair until the drop brings it under", () => {
     const opened = Board.open(overCapUpdate());
     const before = opened.encode();

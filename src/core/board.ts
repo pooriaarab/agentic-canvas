@@ -160,10 +160,6 @@ export class Board {
     this.meta = doc.getMap("meta");
   }
 
-  /**
-   * Load a saved board. Refuses a doc past the element cap. Then it deletes every entry that fails
-   * the element checks, and repairs what concurrent writers left broken.
-   */
   /** Load a saved board with no element checks. Only the owner repair path uses it. */
   static open(update: Uint8Array): Board {
     const doc = new Y.Doc();
@@ -171,6 +167,10 @@ export class Board {
     return new Board(doc);
   }
 
+  /**
+   * Load a saved board. Refuses a doc past the element cap. Then it deletes every entry that fails
+   * the element checks, and repairs what concurrent writers left broken.
+   */
   static decode(update: Uint8Array): Board {
     const board = Board.open(update);
     if (board.elements.size > MAX_ELEMENTS) throw new CanvasError("LIMIT", `a board holds at most ${MAX_ELEMENTS} elements`);
@@ -233,8 +233,8 @@ export class Board {
     const byId = new Map(all.map((e) => [e.id, e]));
     const doomed = new Set([...this.elements.keys()].filter((key) => !byId.has(key)));
     for (const name of drop) {
-      if (!byId.has(name)) throw new CanvasError("NOT_FOUND", `no element "${name}"`);
-      this.subtreeIn(all, name).forEach((d) => doomed.add(d));
+      if (byId.has(name)) this.subtreeIn(all, name).forEach((d) => doomed.add(d));
+      else if (!this.elements.has(name)) throw new CanvasError("NOT_FOUND", `no element "${name}"`);
     }
     const alive = all.filter((e) => !doomed.has(e.id));
     const aliveById = new Map(alive.map((e) => [e.id, e]));
