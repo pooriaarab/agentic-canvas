@@ -14,7 +14,7 @@ export const MAX_LIVE_BYTES = 1_572_864;
 export type Writer = (item: { client: number; clock: number }) => Principal | undefined;
 const BOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
   let text = "";
   for (let i = 0; i < bytes.length; i += 8192) text += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(text);
@@ -22,7 +22,7 @@ function toBase64(bytes: Uint8Array): string {
 
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
 
-const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+export const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
 /** The store refuses some ids, and its error text holds the id. Refuse them first, with a fixed message. */
 function boardKey(id: string): string {

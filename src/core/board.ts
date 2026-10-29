@@ -137,6 +137,7 @@ const isBindable = (type: unknown): boolean => typeof type === "string" && type 
 const isValidZ = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= MAX_Z;
 const clampZ = (value: number): number => Math.min(MAX_Z, Math.max(-MAX_Z, value));
 const samePrincipal = (a: Principal, b: Principal): boolean => a.kind === b.kind && a.id === b.id;
+const isStamp = (value: unknown, who: Principal): boolean => typeof value === "object" && value !== null && (value as Principal).kind === who.kind && (value as Principal).id === who.id;
 const hasId = (e: unknown): e is { id: string } => typeof e === "object" && e !== null && typeof (e as { id?: unknown }).id === "string";
 
 /**
@@ -427,6 +428,66 @@ export class Board {
     }
     this.write(plan, by);
     return plan.map(([memberId]) => memberId);
+  }
+
+  /** Every stored entry as it is, valid or not, with its key as `id`. */
+  rawElements(): Record<string, unknown>[] {
+    return [...this.elements].map(([key, entry]) => ({ ...(entry instanceof Y.Map ? entry.toJSON() : {}), id: key }));
+  }
+
+  /**
+   * The raw stored elements that `who` made (`author`) and the ids of those that `who` last edited but did not make.
+   * It reads entries as they are, with no element checks, so a damaged entry still shows. Account export uses it.
+   */
+  stampedBy(who: Principal): { authored: Record<string, unknown>[]; edited: string[]; titleBy: boolean } {
+    const authored: Record<string, unknown>[] = [];
+    const edited: string[] = [];
+    for (const [key, entry] of this.elements) {
+      if (!(entry instanceof Y.Map)) continue;
+      if (isStamp(entry.get("author"), who)) authored.push({ ...entry.toJSON(), id: key });
+      else if (isStamp(entry.get("editedBy"), who)) edited.push(key);
+    }
+    return { authored, edited, titleBy: isStamp(this.meta.get("titleBy"), who) };
+  }
+
+  /**
+   * Erase `who` from the board. An element they made is deleted alone: its members go to its parent group, and a
+   * connector of someone else that was bound to it goes too, because it would be hidden. An element they only edited
+   * keeps its content, and its editor becomes `(erased)`. A title they set is cleared. Idempotent. Returns the counts.
+   */
+  eraseStamps(who: Principal, erased: Principal): { authored: number; edited: number; dangling: number; title: boolean } {
+    const mine = new Set<string>();
+    for (const [key, entry] of this.elements) if (entry instanceof Y.Map && isStamp(entry.get("author"), who)) mine.add(key);
+    const counts = { authored: mine.size, edited: 0, dangling: 0, title: isStamp(this.meta.get("titleBy"), who) };
+    this.doc.transact(() => {
+      for (const key of mine) {
+        // A group that goes hands its members to its own parent.
+        const parent = (this.elements.get(key) as Y.Map<unknown>).get("groupId");
+        for (const [, other] of this.elements) {
+          if (other instanceof Y.Map && other.get("groupId") === key) {
+            if (typeof parent === "string") other.set("groupId", parent);
+            else other.delete("groupId");
+          }
+        }
+      }
+      mine.forEach((key) => this.elements.delete(key));
+      for (const [key, entry] of [...this.elements]) {
+        if (!(entry instanceof Y.Map)) continue;
+        const ends = [entry.get("from"), entry.get("to")];
+        if (entry.get("type") === "connector" && ends.some((e) => hasId(e) && mine.has(e.id))) {
+          this.elements.delete(key);
+          counts.dangling += 1;
+        } else if (isStamp(entry.get("editedBy"), who)) {
+          entry.set("editedBy", erased);
+          counts.edited += 1;
+        }
+      }
+      if (counts.title) {
+        this.meta.delete("title");
+        this.meta.set("titleBy", erased);
+      }
+    });
+    return counts;
   }
 
   /** Delete an element. A shape takes its connectors and a group takes its members. Returns the ids removed. */
