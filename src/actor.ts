@@ -1,4 +1,5 @@
-import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/principal.js";
+import { parsePrincipal } from "agentic-identity";
+import { PRINCIPAL_KINDS, type Principal } from "./core/principal.js";
 
 /** The operator set CANVAS_ACTOR wrong or not at all. */
 export class ActorConfigError extends Error {}
@@ -11,9 +12,10 @@ export function operatorActor(env: Record<string, string | undefined> = process.
   const raw = env.CANVAS_ACTOR;
   if (!raw) throw new ActorConfigError("the operator must set CANVAS_ACTOR=<kind>:<id>");
   const at = raw.indexOf(":");
-  const parsed = principalSchema.safeParse({ kind: raw.slice(0, at), id: raw.slice(at + 1) });
-  if (at < 0 || !parsed.success) {
+  try {
+    if (at < 0) throw new Error("no kind");
+    return parsePrincipal({ kind: raw.slice(0, at), id: raw.slice(at + 1) });
+  } catch {
     throw new ActorConfigError(`bad CANVAS_ACTOR "${raw}": use <kind>:<id>, kind is one of ${PRINCIPAL_KINDS.join(", ")}`);
   }
-  return parsed.data;
 }

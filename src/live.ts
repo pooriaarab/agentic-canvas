@@ -1,7 +1,8 @@
+import { parsePrincipal } from "agentic-identity";
 import { SyncClient, type Peer } from "agentic-realtime/client";
 import { Board, CanvasError, type ErrorCode } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
-import { principalSchema, type Principal } from "./core/principal.js";
+import type { Principal } from "./core/principal.js";
 import { readBoard, type BoardData } from "./core/read.js";
 import { toSvg } from "./core/svg.js";
 import type { BoardAccess } from "./service.js";
@@ -56,9 +57,14 @@ export async function whoAmI(server: string, token: string): Promise<Me> {
   const response = await call(server, token, "/me");
   if (!response.ok) throw await refusal(response, "the server refused the token");
   const { actor, kind, role } = await json(response);
-  const principal = principalSchema.safeParse({ kind, id: actor });
-  if (!principal.success || (role !== "editor" && role !== "viewer")) throw new CanvasError("INVALID", "the server sent an identity this client does not know");
-  return { actor: principal.data, role };
+  let principal: Principal | undefined;
+  try {
+    principal = parsePrincipal({ kind, id: actor });
+  } catch {
+    // Left unset: the check below refuses it.
+  }
+  if (!principal || (role !== "editor" && role !== "viewer")) throw new CanvasError("INVALID", "the server sent an identity this client does not know");
+  return { actor: principal, role };
 }
 
 /**

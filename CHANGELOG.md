@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+**Changed**
+
+- `authenticate(request, env)` returns a promise. It now uses the `agentic-identity/http` helpers.
+- The WebSocket token sub-protocol is now `agentic-canvas` plus `agentic-canvas.bearer.<token in base64url>`. `WS_PROTOCOL` is `agentic-canvas`. The bundled UI sends the new form.
+- A bearer token may hold only letters, digits, `_` and `-`, and at most 512 characters.
+- An actor id (`CANVAS_ACTOR`, a token grant) must match the identity kernel rule: letters, digits, `.`, `_`, `-`, at most 128 characters.
+
 ## 0.5.0
 
 No breaking changes.

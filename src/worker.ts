@@ -1,9 +1,10 @@
-import { parseRegion, type Blobs, type Region } from "agentic-identity";
+import { hasScope, parsePrincipal, parseRegion, type Auth, type Blobs, type Region } from "agentic-identity";
 import type { Realtime } from "agentic-realtime";
 import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } from "agentic-identity/cloudflare";
+import { acceptWebSocketProtocol, principalFromWebSocketRequest } from "agentic-identity/http";
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
-import { principalSchema, type Principal } from "./core/principal.js";
+import type { Principal } from "./core/principal.js";
 import { handSave, pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
 import { CanvasService, MAX_LIVE_BYTES } from "./service.js";
 
@@ -53,41 +54,48 @@ function sameText(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** A browser cannot set a header on a WebSocket. It offers the token as the sub-protocols `agentic-canvas.bearer` and the token in base64url. */
-export const WS_PROTOCOL = "agentic-canvas.bearer";
-function socketToken(request: Request): string | undefined {
-  if (request.headers.get("upgrade") !== "websocket") return undefined;
-  const [name, encoded, ...more] = (request.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
-  if (name !== WS_PROTOCOL || !encoded || more.length > 0 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return undefined;
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
-  } catch {
-    return undefined;
-  }
+/** A browser cannot set a header on a WebSocket. It offers the sub-protocols `agentic-canvas` and `agentic-canvas.bearer.<token in base64url>`. */
+export const WS_PROTOCOL = "agentic-canvas";
+
+/** The token table as an `Auth` port. A viewer holds `canvas:read`. An editor holds `canvas:read` and `canvas:write`. */
+function tokenAuth(env: WorkerEnv): Auth {
+  return {
+    async authenticate(request) {
+      const token = /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+      if (!token || !env.CANVAS_API_TOKENS) return null;
+      let grants: unknown;
+      try {
+        grants = JSON.parse(env.CANVAS_API_TOKENS);
+      } catch {
+        return null;
+      }
+      if (typeof grants !== "object" || grants === null || Array.isArray(grants)) return null;
+      let found: unknown;
+      for (const [candidate, grant] of Object.entries(grants)) {
+        if (sameText(candidate, token) && candidate.length >= MIN_TOKEN_LENGTH) found = grant;
+      }
+      if (typeof found !== "object" || found === null) return null;
+      const { actor, kind, role = "editor" } = found as Record<string, unknown>;
+      let step: Principal;
+      try {
+        step = parsePrincipal({ kind, id: actor });
+      } catch {
+        return null;
+      }
+      // A role that is not one we know denies the token. It never falls back to editor.
+      // The id of the room's own seeder is taken: a token under it would pass for the Worker in a room's list of authors.
+      if (step.kind === SEEDER.kind && step.id === SEEDER.id) return null;
+      if (role !== "editor" && role !== "viewer") return null;
+      return { principalId: step.id, kind: step.kind, chain: [step], scopes: role === "viewer" ? ["canvas:read"] : ["canvas:read", "canvas:write"] };
+    },
+  };
 }
 
 /** The principal and role for a bearer token, or null. The kind is never defaulted: a grant without a valid kind gets null. */
-export function authenticate(request: Request, env: WorkerEnv): { actor: Principal; role: Role } | null {
-  const token = /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? socketToken(request);
-  if (!token || !env.CANVAS_API_TOKENS) return null;
-  let grants: unknown;
-  try {
-    grants = JSON.parse(env.CANVAS_API_TOKENS);
-  } catch {
-    return null;
-  }
-  if (typeof grants !== "object" || grants === null || Array.isArray(grants)) return null;
-  let found: unknown;
-  for (const [candidate, grant] of Object.entries(grants)) {
-    if (sameText(candidate, token) && candidate.length >= MIN_TOKEN_LENGTH) found = grant;
-  }
-  if (typeof found !== "object" || found === null) return null;
-  const { actor, kind, role = "editor" } = found as Record<string, unknown>;
-  const parsed = principalSchema.safeParse({ kind, id: actor });
-  // A role that is not one we know denies the token. It never falls back to editor.
-  // The id of the room's own seeder is taken: a token under it would pass for the Worker in a room's list of authors.
-  const taken = parsed.success && parsed.data.kind === SEEDER.kind && parsed.data.id === SEEDER.id;
-  return parsed.success && !taken && (role === "editor" || role === "viewer") ? { actor: parsed.data, role } : null;
+export async function authenticate(request: Request, env: WorkerEnv): Promise<{ actor: Principal; role: Role } | null> {
+  const found = await principalFromWebSocketRequest(request, tokenAuth(env), { protocol: WS_PROTOCOL });
+  if (found instanceof Response) return null;
+  return { actor: { kind: found.kind, id: found.principalId }, role: hasScope(found.scopes, "canvas:write") ? "editor" : "viewer" };
 }
 
 /** The image types we accept, found by their first bytes. The client's claim of a type is not trusted. */
@@ -184,7 +192,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
       return fail("NOT_CONFIGURED", 'set CANVAS_REGION to "eu", "us", or "unknown"', 503);
     }
     if (!c.env.DB || !c.env.IMAGES) return fail("NOT_CONFIGURED", "bind DB (D1) and IMAGES (R2)", 503);
-    const who = authenticate(c.req.raw, c.env);
+    const who = await authenticate(c.req.raw, c.env);
     if (!who) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
     if (who.role === "viewer" && c.req.method !== "GET") return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
     c.set("actor", who.actor);
@@ -233,10 +241,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const { actor, role } = c.var;
     const opened = await options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
     // A browser closes a socket whose answer does not pick one of the sub-protocols it offered.
-    if (opened.status !== 101 || c.req.header("authorization") || !socketToken(c.req.raw)) return opened;
-    const headers = new Headers(opened.headers);
-    headers.set("sec-websocket-protocol", WS_PROTOCOL);
-    return new Response(null, { status: 101, headers, webSocket: (opened as unknown as { webSocket: unknown }).webSocket } as ResponseInit);
+    return acceptWebSocketProtocol(c.req.raw, opened, WS_PROTOCOL);
   });
 
   // A client may read the stored board here and post a room back. The Worker does both itself now. These stay for clients that save by hand, and are sync plumbing, not board commands.
