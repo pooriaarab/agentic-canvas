@@ -23,5 +23,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: dev smoke
-        run: npm run dev:smoke
+        run: node scripts/dev-smoke.mjs 8793 /health --var CANVAS_REGION:unknown
       - run: npm run test:e2e
