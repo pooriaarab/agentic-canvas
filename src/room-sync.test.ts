@@ -10,7 +10,7 @@ import type { Realtime } from "agentic-realtime";
 import { afterAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { Board } from "./core/board.js";
-import { pull, seed } from "./room-sync.js";
+import { pull, seed, SEEDER, writers } from "./room-sync.js";
 import { CanvasService } from "./service.js";
 import { openLocalStore } from "./store-file.js";
 
@@ -42,6 +42,7 @@ function fakeRoom(doc: Y.Doc, reply: (message: Uint8Array) => Uint8Array | null 
   const sockets: FakeSocket[] = [];
   const live = {
     meta: async () => ({ updates: calls.updates, compactions: 0, contributors: [{ ...ada, machine: false }] }),
+    attribution: async () => null,
     exportHistory: async () => {
       calls.exports++;
       const text = new TextEncoder().encode(`${JSON.stringify({ type: "meta" })}\n${JSON.stringify({ type: "state", base64: btoa(String.fromCharCode(...Y.encodeStateAsUpdate(doc))) })}\n`);
@@ -128,5 +129,18 @@ describe("seed", () => {
     const { live, sockets } = fakeRoom(new Y.Doc());
     await expect(seed(live, service, "b")).rejects.toMatchObject({ code: "LIMIT" });
     expect(sockets).toHaveLength(0);
+  });
+});
+
+describe("writers", () => {
+  test("names the principal of the range that holds an item, and no one for the seeder or a gap", async () => {
+    const authors = [{ ...ada, machine: false }, { ...SEEDER, machine: true }];
+    const ranges = [{ client: 1, clock: 0, length: 5, author: 0, at: 0 }, { client: 1, clock: 5, length: 5, author: 1, at: 0 }];
+    const live = { attribution: async () => ({ authors, ranges, dropped: 0, lost: false }) } as unknown as Realtime;
+    const who = await writers(live, "b");
+    expect(who({ client: 1, clock: 4 })).toEqual(ada);
+    expect(who({ client: 1, clock: 5 })).toBeUndefined();
+    expect(who({ client: 1, clock: 10 })).toBeUndefined();
+    expect(who({ client: 2, clock: 0 })).toBeUndefined();
   });
 });
