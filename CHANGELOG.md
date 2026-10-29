@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.1 - 2026-10-29
+
+**Changed**
+
+- Depend on `agentic-design` 0.8 (was 0.5). The old range `^0.5.0` blocked installing the agentic-* packages together (ERESOLVE). The build, typecheck, tests, and e2e suite pass on 0.8 with no code change.
+
 ## 0.14.0
 
 **Added**
