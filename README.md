@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.5.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.6.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
@@ -327,9 +327,9 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 |---|---|
 | `createApp(options?)` | Make the Hono app for the Worker. Pass `live` to turn on the live-room socket. |
 | `default` | The Worker, without live rooms. |
-| `authenticate(request, env)` | Read a bearer token from the `Authorization` header, or from a WebSocket sub-protocol. Return the actor and the role, or `null`. |
+| `authenticate(request, env)` | Read a bearer token from the `Authorization` header, or from a WebSocket sub-protocol. Return a promise of the actor and the role, or `null`. |
 | `sniffImage(bytes)` | Find the image type from the first bytes, or return `null`. The client's claim of a type is not trusted. |
-| `WS_PROTOCOL` | The sub-protocol name that carries a token on a WebSocket: `agentic-canvas.bearer`. |
+| `WS_PROTOCOL` | The sub-protocol name for a WebSocket: `agentic-canvas`. The token travels in the entry `agentic-canvas.bearer.<token in base64url>`. |
 | `WorkerEnv` (type), `AppOptions` (type), `Role` (type) | Types for the Worker bindings, the app options and the role, `editor` or `viewer`. |
 
 ### `agentic-canvas/live-worker`

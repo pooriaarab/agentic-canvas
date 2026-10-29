@@ -8,23 +8,23 @@ const ask = (grant: unknown, token = TOKEN) =>
   authenticate(new Request("http://x/", { headers: { authorization: `Bearer ${token}` } }), { CANVAS_API_TOKENS: JSON.stringify({ [TOKEN]: grant }) } as never);
 
 describe("token roles", () => {
-  test("a missing role is editor, and viewer is kept", () => {
-    expect(ask({ actor: "a", kind: "human" })).toEqual({ actor: { kind: "human", id: "a" }, role: "editor" });
-    expect(ask({ actor: "a", kind: "agent", role: "viewer" })?.role).toBe("viewer");
+  test("a missing role is editor, and viewer is kept", async () => {
+    expect(await ask({ actor: "a", kind: "human" })).toEqual({ actor: { kind: "human", id: "a" }, role: "editor" });
+    expect((await ask({ actor: "a", kind: "agent", role: "viewer" }))?.role).toBe("viewer");
   });
 
-  test.each([null, 1, "Viewer", "owner", "", true, {}, ["viewer"]])("the role %j denies the token", (role) => {
-    expect(ask({ actor: "a", kind: "human", role })).toBeNull();
+  test.each([null, 1, "Viewer", "owner", "", true, {}, ["viewer"]])("the role %j denies the token", async (role) => {
+    expect(await ask({ actor: "a", kind: "human", role })).toBeNull();
   });
 
-  test("a grant with no kind, or another token, gets nothing", () => {
-    expect(ask({ actor: "a", role: "editor" })).toBeNull();
-    expect(ask({ actor: "a", kind: "human" }, "u".repeat(40))).toBeNull();
+  test("a grant with no kind, or another token, gets nothing", async () => {
+    expect(await ask({ actor: "a", role: "editor" })).toBeNull();
+    expect(await ask({ actor: "a", kind: "human" }, "u".repeat(40))).toBeNull();
   });
 
-  test("the room's seeder name is no token's name", () => {
-    expect(ask({ actor: "canvas-room", kind: "agent" })).toBeNull();
-    expect(ask({ actor: "canvas-room", kind: "human" })?.actor.id).toBe("canvas-room");
+  test("the room's seeder name is no token's name", async () => {
+    expect(await ask({ actor: "canvas-room", kind: "agent" })).toBeNull();
+    expect((await ask({ actor: "canvas-room", kind: "human" }))?.actor.id).toBe("canvas-room");
   });
 });
 
@@ -37,24 +37,25 @@ describe("token as a WebSocket sub-protocol", () => {
   const socket = (protocol: string | null, extra: Record<string, string> = {}, upgrade = "websocket") =>
     authenticate(new Request("http://x/", { headers: { ...(upgrade ? { upgrade } : {}), ...(protocol === null ? {} : { "sec-websocket-protocol": protocol }), ...extra } }), env);
 
-  test("a good token works, and the viewer role is kept", () => {
-    expect(socket(`agentic-canvas.bearer, ${b64(TOKEN)}`)).toEqual({ actor: { kind: "human", id: "a" }, role: "editor" });
-    expect(socket(`agentic-canvas.bearer,${b64("v".repeat(40))}`)?.role).toBe("viewer");
+  test("a good token works, and the viewer role is kept", async () => {
+    expect(await socket(`agentic-canvas, agentic-canvas.bearer.${b64(TOKEN)}`)).toEqual({ actor: { kind: "human", id: "a" }, role: "editor" });
+    expect((await socket(`agentic-canvas,agentic-canvas.bearer.${b64("v".repeat(40))}`))?.role).toBe("viewer");
   });
 
   test.each([
-    ["a wrong protocol name", `other.bearer, ${b64(TOKEN)}`],
-    ["a third protocol", `agentic-canvas.bearer, ${b64(TOKEN)}, extra`],
-    ["no token part", "agentic-canvas.bearer"],
-    ["characters outside base64url", "agentic-canvas.bearer, a+b/c="],
-    ["bytes that are not UTF-8", "agentic-canvas.bearer, _w"],
-    ["an unknown token", `agentic-canvas.bearer, ${b64("u".repeat(40))}`],
-  ])("%s gets nothing", (_name, protocol) => {
-    expect(socket(protocol)).toBeNull();
+    ["a wrong protocol name", `other, other.bearer.${b64(TOKEN)}`],
+    ["a second token entry", `agentic-canvas, agentic-canvas.bearer.${b64(TOKEN)}, agentic-canvas.bearer.${b64(TOKEN)}`],
+    ["no bare protocol", `agentic-canvas.bearer.${b64(TOKEN)}`],
+    ["no token part", "agentic-canvas"],
+    ["characters outside base64url", "agentic-canvas, agentic-canvas.bearer.a+b/c="],
+    ["bytes that are not UTF-8", "agentic-canvas, agentic-canvas.bearer._w"],
+    ["an unknown token", `agentic-canvas, agentic-canvas.bearer.${b64("u".repeat(40))}`],
+  ])("%s gets nothing", async (_name, protocol) => {
+    expect(await socket(protocol)).toBeNull();
   });
 
-  test("a plain request cannot use it, and a wrong Authorization header does not fall back to it", () => {
-    expect(socket(`agentic-canvas.bearer, ${b64(TOKEN)}`, {}, "")).toBeNull();
-    expect(socket(`agentic-canvas.bearer, ${b64(TOKEN)}`, { authorization: `Bearer ${"u".repeat(40)}` })).toBeNull();
+  test("a plain request cannot use it, and a wrong Authorization header does not fall back to it", async () => {
+    expect(await socket(`agentic-canvas, agentic-canvas.bearer.${b64(TOKEN)}`, {}, "")).toBeNull();
+    expect(await socket(`agentic-canvas, agentic-canvas.bearer.${b64(TOKEN)}`, { authorization: `Bearer ${"u".repeat(40)}` })).toBeNull();
   });
 });

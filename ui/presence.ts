@@ -3,14 +3,14 @@
 import { SyncClient, type Peer } from "agentic-realtime/client";
 import type { PresenceEntry } from "agentic-design/react";
 
-const WS_PROTOCOL = "agentic-canvas.bearer";
+const WS_PROTOCOL = "agentic-canvas";
 const b64url = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** A browser cannot set a header on a WebSocket, so the token travels as a sub-protocol. Each room has its own class, so two boards on one page keep their own tokens. */
 const bearerSocket = (token: string) =>
   class extends WebSocket {
     constructor(url: string) {
-      super(url, [WS_PROTOCOL, b64url(token)]);
+      super(url, [WS_PROTOCOL, `${WS_PROTOCOL}.bearer.${b64url(token)}`]);
     }
   };
 
