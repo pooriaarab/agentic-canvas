@@ -8,6 +8,7 @@
 
 **Breaking changes**
 
+- The local file store is the file store of `agentic-identity` (^0.7.0). A `canvas.json` from an earlier version is upgraded in place the first time a store opens it, and an earlier version cannot read the upgraded file. `lockTimeoutMs` and `staleAfterMs` are removed from `FileStoreOptions`. A lock older than 3 seconds is taken over.
 - Every board route checks the caller's role on the board. A caller with no role gets 404. A board made before this change has no owner (see Limits in the README). The static dev list is not affected.
 - `GET /boards` lists the boards the caller holds a role on.
 - A new board is registered as an identity resource, with its maker as owner. Deleting a board removes its sharing records.
