@@ -207,7 +207,7 @@ export function BoardView({ id, client: remote, host, room: roomOptions, me, bac
   const remove = (target: string) => {
     setSelected(null);
     write(() => client.remove(id, target), "Could not delete the item");
-    canvasBox.current?.querySelector<HTMLElement>("[role=group]")?.focus();
+    canvasBox.current?.querySelector<HTMLElement>(".canvas")?.focus();
   };
   const add = (type: ShapeType) => {
     const [w, h] = DEFAULT_SIZE[type];
