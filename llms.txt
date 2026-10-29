@@ -5,10 +5,10 @@ A shared whiteboard for diagrams, drawn by people and agents.
 Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 
 - SDK: import { Board, drawFlow, readBoard, toSvg } from "agentic-canvas".
-- CLI: agentic-canvas new|read|add|connect|move|rm|flow|export.
+- CLI: agentic-canvas new|list|read|add|connect|update|move|rm|flow|export.
 - Live: set CANVAS_SERVER and CANVAS_TOKEN, and the CLI and `agentic-canvas mcp` edit the board in its live room.
 - SDK: import { LiveBoard, LiveService } from "agentic-canvas/live".
-- SDK: import { createClient, CanvasApiError } from "agentic-canvas/client". It calls the Worker API with fetch. Methods: me, createBoard, readBoard, exportSvg, addShape, addConnector, drawFlow, move, remove, uploadImage, getImage, state, checkpoint. A failure throws CanvasApiError with `code` and `status`. No retries.
+- SDK: import { createClient, CanvasApiError } from "agentic-canvas/client". It calls the Worker API with fetch. Methods: me, listBoards, createBoard, readBoard, exportSvg, addShape, addConnector, drawFlow, update, move, remove, uploadImage, getImage, state, checkpoint. A failure throws CanvasApiError with `code` and `status`. No retries.
 
 ## Docs
 

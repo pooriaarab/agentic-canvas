@@ -57,6 +57,8 @@ describe("the remote client", () => {
     expect(flow.nodes).toHaveLength(2);
     expect(flow.edges).toHaveLength(1);
     expect(await human.move("c1", "a", 5, 5)).toEqual({ moved: ["a"] });
+    expect(await human.update("c1", "a", { w: 240, text: "Begin" })).toMatchObject({ w: 240, text: "Begin", author: { kind: "human" }, editedBy: { kind: "human" } });
+    expect(await human.listBoards()).toEqual({ boards: [{ id: "c1", title: "Plan" }] });
 
     const read = await human.readBoard("c1");
     expect(read.title).toBe("Plan");
@@ -74,6 +76,15 @@ describe("the remote client", () => {
     expect([...got.bytes]).toEqual([...PNG]);
     expect(got.type).toBe("image/png");
     expect(await human.addShape("c1", { type: "image", x: 0, y: 0, w: 20, h: 20, src: image.ref })).toMatchObject({ src: image.ref });
+  }, 120_000);
+
+  test("refuses an empty patch, a missing element, and a viewer's edit", async () => {
+    const human = createClient({ baseUrl: worker.url, token: HUMAN });
+    const viewer = createClient({ baseUrl: worker.url, token: VIEWER });
+    expect(await failure(human.update("c1", "a", {}))).toMatchObject({ code: "INVALID", status: 422 });
+    expect(await failure(human.update("c1", "nope", { w: 5 }))).toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(await failure(viewer.update("c1", "a", { w: 5 }))).toMatchObject({ code: "FORBIDDEN", status: 403 });
+    expect((await viewer.listBoards()).boards.length).toBeGreaterThan(0);
   }, 120_000);
 
   test("reads the Yjs state and saves a room back", async () => {

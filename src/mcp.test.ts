@@ -77,7 +77,20 @@ describe("tools", () => {
     const client = await connect(fresh());
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     await client.close();
-    expect(names).toEqual(["add_shape", "connect", "create_board", "draw_flow", "export_png", "export_svg", "move", "read_board", "remove"]);
+    expect(names).toEqual(["add_shape", "connect", "create_board", "draw_flow", "export_png", "export_svg", "list_boards", "move", "read_board", "remove", "update_element"]);
+  });
+
+  test("lists boards and resizes an element, and the edit keeps the author", async () => {
+    const client = await connect(fresh());
+    try {
+      await call(client, "create_board", { id: "l1", title: "One" });
+      await call(client, "add_shape", { board: "l1", id: "s", type: "rect", x: 0, y: 0 });
+      expect((await call(client, "list_boards", {})).value).toEqual({ boards: [{ id: "l1", title: "One" }] });
+      expect((await call(client, "update_element", { board: "l1", element: "s", w: 300, h: 90, text: "Big" })).value).toMatchObject({ w: 300, h: 90, text: "Big" });
+      expect((await call(client, "update_element", { board: "l1", element: "s" })).value.code).toBe("INVALID");
+    } finally {
+      await client.close();
+    }
   });
 
   test("round trip: create, add, connect, flow, move, remove, read, export", async () => {

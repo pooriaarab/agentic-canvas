@@ -42,6 +42,9 @@ export interface ConnectorInput {
   stroke?: string;
 }
 
+export type ShapePatch = Partial<Pick<ShapeInput, "x" | "y" | "w" | "h" | "text" | "fill" | "stroke" | "src">>;
+export type ConnectorPatch = Partial<Pick<ConnectorInput, "from" | "to" | "text" | "startArrow" | "endArrow" | "stroke">>;
+
 export interface ImageInfo {
   id: string;
   ref: string;
@@ -71,6 +74,8 @@ export class CanvasApiError extends Error {
 export interface CanvasClient {
   /** Who the token stands for. */
   me(options?: CallOptions): Promise<{ actor: string; kind: PrincipalKind; role: "editor" | "viewer" }>;
+  /** The first 100 boards, with titles. */
+  listBoards(options?: CallOptions): Promise<{ boards: { id: string; title: string }[] }>;
   createBoard(input?: { id?: string; title?: string }, options?: CallOptions): Promise<{ id: string; title: string }>;
   readBoard(id: string, options?: CallOptions): Promise<BoardData & { id: string }>;
   /** The board as an SVG document. */
@@ -79,6 +84,8 @@ export interface CanvasClient {
   addConnector(id: string, connector: ConnectorInput, options?: CallOptions): Promise<Connector>;
   /** Draw a flowchart from text such as `A -> B: label`. Returns the new ids. */
   drawFlow(id: string, text: string, options?: CallOptions): Promise<{ nodes: string[]; edges: string[] }>;
+  /** Change fields of one shape or connector, such as its size or text. The patch holds at least one field. */
+  update(id: string, element: string, patch: ShapePatch | ConnectorPatch, options?: CallOptions): Promise<Shape | Connector>;
   /** Move an element. Returns the ids that moved: a shape takes its connectors with it. */
   move(id: string, element: string, dx: number, dy: number, options?: CallOptions): Promise<{ moved: string[] }>;
   /** Remove an element. Returns the ids removed. */
@@ -146,12 +153,14 @@ export function createClient(options: ClientOptions): CanvasClient {
 
   return {
     me: (o) => json("GET", "/me", undefined, o),
+    listBoards: (o) => json("GET", "/boards", undefined, o),
     createBoard: (input = {}, o) => json("POST", "/boards", input, o),
     readBoard: (id, o) => json("GET", `/boards/${seg(id)}`, undefined, o),
     exportSvg: async (id, o) => (await send("GET", `/boards/${seg(id)}/svg`, {}, o)).text(),
     addShape: (id, shape, o) => json("POST", `/boards/${seg(id)}/shapes`, shape, o),
     addConnector: (id, connector, o) => json("POST", `/boards/${seg(id)}/connectors`, connector, o),
     drawFlow: (id, text, o) => json("POST", `/boards/${seg(id)}/flow`, { text }, o),
+    update: (id, element, patch, o) => json("PATCH", `/boards/${seg(id)}/elements/${seg(element)}`, patch, o),
     move: (id, element, dx, dy, o) => json("POST", `/boards/${seg(id)}/move`, { element, dx, dy }, o),
     remove: (id, element, o) => json("DELETE", `/boards/${seg(id)}/elements/${seg(element)}`, undefined, o),
     uploadImage: async (data, o) => parse<ImageInfo>(await send("POST", "/images", { body: data as BodyInit, contentType: "application/octet-stream" }, o), o),

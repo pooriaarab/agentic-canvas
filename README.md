@@ -37,7 +37,7 @@ npx agentic-canvas export demo --out demo.svg
 npx agentic-canvas export demo --format png --out demo.png
 ```
 
-Other commands: `add`, `connect`, `move`, `rm`. Run `npx agentic-canvas --help`.
+Other commands: `list`, `add`, `connect`, `update`, `move`, `rm`. Run `npx agentic-canvas --help`.
 `repair` is for the owner only. It needs `CANVAS_ACTOR=human:<id>`.
 Boards live in `./.agentic-canvas` (or `--dir`, or `CANVAS_DIR`). Every write
 needs an actor in `CANVAS_ACTOR`, as `<kind>:<id>`. The operator sets it. A write
@@ -51,7 +51,7 @@ CANVAS_ACTOR=agent:helper npx agentic-canvas --dir ./boards mcp
 ```
 
 The server speaks MCP on stdio. It has one tool for each CLI command: `create_board`,
-`read_board`, `add_shape`, `connect`, `move`, `remove`, `draw_flow`, `export_svg`, and
+`list_boards`, `read_board`, `add_shape`, `connect`, `update_element`, `move`, `remove`, `draw_flow`, `export_svg`, and
 `export_png`. `repair` is not a tool. Only a human operator runs it, from the CLI. The server will not start unless `CANVAS_ACTOR` is set to a valid
 `<kind>:<id>`. That actor stamps every write. No tool takes an actor, author, or kind, so a
 caller cannot choose who it writes as. An error comes back as a tool error with a code.
@@ -104,8 +104,8 @@ try {
 }
 ```
 
-There is one method per route: `me`, `createBoard`, `readBoard`, `exportSvg`, `addShape`, `addConnector`,
-`drawFlow`, `move`, `remove`, `uploadImage`, `getImage`, `state`, and `checkpoint`. Each takes
+There is one method per route: `me`, `listBoards`, `createBoard`, `readBoard`, `exportSvg`, `addShape`, `addConnector`,
+`drawFlow`, `update`, `move`, `remove`, `uploadImage`, `getImage`, `state`, and `checkpoint`. Each takes
 `{ signal }` last, so an `AbortSignal` can stop a call. The token sets the actor. A failed call throws
 `CanvasApiError` with the API `code` and the HTTP `status`. A call that gets no reply has code `NETWORK`
 and status 0. The client never retries. A 503 means "try again", and the caller decides, because a
@@ -132,7 +132,7 @@ repeated write can change a board twice. Pass `fetch` to use your own.
   (EU jurisdiction), through the shared `Store` and `Blobs` ports. Set `CANVAS_API_TOKENS`
   (a JSON map of token to `{ actor, kind }`, tokens of 32 characters or more) and `CANVAS_REGION`.
   Routes: `POST /boards`, `GET /boards/:id`, `GET /boards/:id/svg`, `POST /boards/:id/shapes`,
-  `/connectors`, `/flow`, `/move`, `DELETE /boards/:id/elements/:element`, `POST /images`,
+  `/connectors`, `/flow`, `/move`, `GET /boards`, `PATCH /boards/:id/elements/:element`, `DELETE /boards/:id/elements/:element`, `POST /images`,
   `GET /images/:id`. An image is stored under the SHA-256 of its bytes, and the reply gives
   the `blob:` ref for a shape. A busy database or bucket answers 503: try again.
 - Live rooms (`agentic-canvas/live-worker`, on `agentic-realtime`). One Durable Object holds one

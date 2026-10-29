@@ -19,9 +19,11 @@ Usage: ${BRAND.command} [--dir <path>] <command> [flags]
 
 Commands:
   new [--id <id>] [--title <t>]            Make a board.
+  list                                     List the boards with their titles.
   read <board>                             Print the board as JSON.
   add <board> --type <t> --x <n> --y <n>   Add a shape. Also: --w --h --text --fill --stroke --src --id.
   connect <board> <from> <to> [--text <t>] Join two shapes with an arrow.
+  update <board> <element> [--x --y --w --h --text --fill --stroke]  Change fields of an element. Resize with --w and --h.
   move <board> <element> --dx <n> --dy <n> Move an element or a group.
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
@@ -100,6 +102,9 @@ async function run(argv: string[]): Promise<void> {
     case "new":
       need(0, "[--id <id>] [--title <t>]");
       return print(await service.create(actor(), { id: v.id, title: v.title }));
+    case "list":
+      need(0, "");
+      return print({ boards: await service.list() });
     case "read":
       need(1, "<board>");
       return print(await service.read(board));
@@ -109,6 +114,11 @@ async function run(argv: string[]): Promise<void> {
     case "connect":
       need(3, "<board> <from> <to> [--text <t>]");
       return print(await service.connect(board, { id: v.id, from: { id: rest[0] }, to: { id: rest[1] }, text: v.text }, actor()));
+    case "update": {
+      need(2, "<board> <element> [--x <n>] [--y <n>] [--w <n>] [--h <n>] [--text <t>] [--fill <c>] [--stroke <c>]");
+      const patch = Object.fromEntries(Object.entries({ x: num(v.x), y: num(v.y), w: num(v.w), h: num(v.h), text: v.text, fill: v.fill, stroke: v.stroke }).filter(([, value]) => value !== undefined));
+      return print(await service.update(board, rest[0], patch, actor()));
+    }
     case "move":
       need(2, "<board> <element> --dx <n> --dy <n>");
       return print(await service.move(board, rest[0], num(v.dx) ?? Number.NaN, num(v.dy) ?? Number.NaN, actor()));

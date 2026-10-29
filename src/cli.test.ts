@@ -197,6 +197,21 @@ describe("concurrency", () => {
   }, 60_000);
 });
 
+describe("list and update", () => {
+  test("list shows every board, and update resizes and marks the last editor", async () => {
+    const dir = fresh();
+    expect(json(await cli(dir, ["list"]))).toEqual({ boards: [] });
+    await cli(dir, ["new", "--id", "b1", "--title", "One"], human);
+    await cli(dir, ["new", "--id", "b2"], human);
+    await cli(dir, ["add", "b1", "--type", "rect", "--x", "0", "--y", "0", "--id", "r"], human);
+    expect(json(await cli(dir, ["list"]))).toEqual({ boards: [{ id: "b1", title: "One" }, { id: "b2", title: "" }] });
+    const done = json(await cli(dir, ["update", "b1", "r", "--w", "200", "--h", "80", "--text", "Hi"], agent));
+    expect(done).toMatchObject({ w: 200, h: 80, text: "Hi", author: { kind: "human" }, editedBy: { kind: "agent_of_human" } });
+    expect((await cli(dir, ["update", "b1", "r"], agent)).code).toBe(1);
+    expect((await cli(dir, ["update", "b1", "r", "--w", "x"], agent)).code).toBe(1);
+  });
+});
+
 describe("round trip", () => {
   test("new, add, connect, flow, move, rm, read, export", async () => {
     const dir = fresh();
