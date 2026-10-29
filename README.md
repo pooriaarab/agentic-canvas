@@ -143,7 +143,7 @@ What it does:
   who made the item and who last edited it.
 - Shows who is in the board, from the live room (`agentic-realtime`). Edits go over the HTTP API.
   After a save, the editor raises a counter in its room presence, and the other editors read the
-  board again. Without the room, the page reads the board again every 8 seconds.
+  board again. The page also reads the board again every 5 seconds, so a change made through the API, the CLI, or an agent shows without a reload, a few seconds late.
 - Works with a keyboard. Tab moves between items. Arrow keys move the selected item, Shift with an
   arrow resizes it, Delete removes it, Escape clears the selection. With nothing selected, arrow
   keys pan, `+` and `-` zoom, and `0` resets the view. The side panel also sets text, position, and size,

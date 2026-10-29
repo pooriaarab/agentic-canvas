@@ -221,6 +221,19 @@ test("two editors see each other and each other's changes", async ({ browser }) 
   await expect(pa.getByRole("list", { name: /In this board/ })).toContainText("AB");
   await pb.getByRole("button", { name: "Add ellipse" }).click();
   await expect(item(pa, "Ellipse: Ellipse")).toBeVisible();
+  // A change made outside the UI, such as an agent's call to the API, shows without a reload.
+  await createClient({ baseUrl: API, token: TOKENS.bot }).addShape("duo", { id: "from-api", type: "sticky", x: 10, y: 10, text: "From the API" });
+  await expect(item(pa, "Sticky note: From the API")).toBeVisible({ timeout: 15_000 });
+
+  // A field the person did not touch follows the board: a save never writes an old text over an agent's edit.
+  await item(pa, "Sticky note: From the API").focus();
+  await expect(pa.getByLabel("Text", { exact: true })).toHaveValue("From the API");
+  await createClient({ baseUrl: API, token: TOKENS.bot }).update("duo", "from-api", { text: "Agent v2" });
+  await expect(pa.getByLabel("Text", { exact: true })).toHaveValue("Agent v2", { timeout: 15_000 });
+  await pa.getByLabel("Width").fill("200");
+  await pa.getByRole("button", { name: "Save changes" }).click();
+  await saved(pa);
+  await expect.poll(async () => (await createClient({ baseUrl: API, token: TOKENS.ada }).readBoard("duo")).nodes.find((n) => n.id === "from-api")?.text).toBe("Agent v2");
   await a.close();
   await b.close();
 });

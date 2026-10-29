@@ -18,6 +18,7 @@ const TOOLS: { type: ShapeType; text: string; icon: ReactNode }[] = [
   { type: "text", text: "Add text", icon: icon(<path d="M4 5h12M10 5v11" />) },
   { type: "sticky", text: "Add sticky note", icon: icon(<path d="M4 4h12v8l-4 4H4z M12 16v-4h4" />) },
 ];
+const POLL_MS = 5000;
 const DEFAULT_SIZE: Record<string, [number, number]> = { rect: [140, 70], ellipse: [140, 70], diamond: [140, 90], text: [140, 40], sticky: [150, 120] };
 const DEFAULT_TEXT: Record<string, string> = { rect: "Rectangle", ellipse: "Ellipse", diamond: "Decision", text: "Text", sticky: "Note" };
 
@@ -86,12 +87,11 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
     room.current = joined;
     return () => (joined.leave(), (room.current = undefined));
   }, [id, token, me.actor, load]);
-  // Without the room, the board still follows other editors by a slow refresh.
+  // A change made outside this UI (the HTTP API, the CLI, an agent) raises no presence counter, so a slow refresh finds it.
   useEffect(() => {
-    if (live) return;
-    const timer = setInterval(() => void load(), 8000);
+    const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
-  }, [live, load]);
+  }, [load]);
 
   /** Run one write after the one before it, then read the board again and tell the room. */
   const write = useCallback(
@@ -190,7 +190,7 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
             <EmptyState title="This board is empty" description={editable ? "Add a shape or a note with the tools above." : "Nothing has been drawn yet."} />
           </div>
         )}
-        <Inspector key={item ? `${item.id}:${"w" in item ? `${item.x},${item.y},${item.w},${item.h}` : ""}` : "none"} item={item} nodes={d.nodes} editable={editable} onText={(text) => item && write(() => client.update(id, item.id, { text }), "Could not save the text")} onPlace={place} onDelete={remove} onConnect={(to) => item && write(() => client.addConnector(id, { from: { id: item.id }, to: { id: to } }), "Could not connect")} />
+        <Inspector key={item?.id ?? "none"} item={item} nodes={d.nodes} editable={editable} onText={(text) => item && write(() => client.update(id, item.id, { text }), "Could not save the text")} onPlace={place} onDelete={remove} onConnect={(to) => item && write(() => client.addConnector(id, { from: { id: item.id }, to: { id: to } }), "Could not connect")} />
       </div>
     </section>
   );
@@ -198,23 +198,32 @@ export function BoardView({ id, token, me }: { id: string; token: string; me: { 
 
 const asEntry = (p: { kind: string; id: string }): PresenceEntry => ({ id: p.id, name: p.id, kind: p.kind === "human" ? "person" : "agent" });
 
+type Field = "text" | "x" | "y" | "w" | "h";
+
+/**
+ * A field shows what the person typed, or else the item's current value. A field the person did not touch follows
+ * the board, so a save never writes an old value over a newer one, such as an agent's edit of the text.
+ */
 function Inspector({ item, nodes, editable, onText, onPlace, onDelete, onConnect }: { item?: Item; nodes: NodeData[]; editable: boolean; onText: (text: string) => void; onPlace: (id: string, patch: { x?: number; y?: number; w?: number; h?: number }) => void; onDelete: (id: string) => void; onConnect: (to: string) => void }) {
-  const [text, setText] = useState(item?.text ?? "");
+  const [draft, setDraft] = useState<Partial<Record<Field, string>>>({});
   const node = item && item.type !== "connector" ? (item as NodeData) : undefined;
-  const [size, setSize] = useState({ x: String(node?.x ?? ""), y: String(node?.y ?? ""), w: String(node?.w ?? ""), h: String(node?.h ?? "") });
   if (!item) return <aside className="inspector" aria-label="Selected item"><p>Select an item to edit it.</p></aside>;
+  const value = (k: Field): string => draft[k] ?? String(k === "text" ? item.text : node?.[k] ?? "");
+  const edit = (k: Field) => (e: { target: { value: string } }) => setDraft({ ...draft, [k]: e.target.value });
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (text !== item.text) onText(text);
+    if (draft.text !== undefined && draft.text !== item.text) onText(draft.text);
     if (node) {
-      const next = { x: Number(size.x), y: Number(size.y), w: Number(size.w), h: Number(size.h) };
       const patch: { x?: number; y?: number; w?: number; h?: number } = {};
       for (const k of ["x", "y", "w", "h"] as const) {
-        const ok = size[k].trim() !== "" && Number.isFinite(next[k]) && (k === "x" || k === "y" || next[k] > 0);
-        if (ok && next[k] !== node[k]) patch[k] = next[k];
+        const typed = draft[k];
+        if (typed === undefined || typed.trim() === "") continue;
+        const n = Number(typed);
+        if (Number.isFinite(n) && (k === "x" || k === "y" || n > 0) && n !== node[k]) patch[k] = n;
       }
       if (Object.keys(patch).length > 0) onPlace(node.id, patch);
     }
+    setDraft({});
   };
   return (
     <aside className="inspector" aria-label="Selected item">
@@ -229,13 +238,13 @@ function Inspector({ item, nodes, editable, onText, onPlace, onDelete, onConnect
       )}
       <span className="sr-only">{byline(item)}</span>
       <form onSubmit={submit}>
-        <Textarea label="Text" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={10000} disabled={!editable} />
+        <Textarea label="Text" value={value("text")} onChange={edit("text")} rows={3} maxLength={10000} disabled={!editable} />
         {node && (
           <div className="sizes">
-            <Input label="X" type="number" value={size.x} onChange={(e) => setSize({ ...size, x: e.target.value })} disabled={!editable} />
-            <Input label="Y" type="number" value={size.y} onChange={(e) => setSize({ ...size, y: e.target.value })} disabled={!editable} />
-            <Input label="Width" type="number" min={20} value={size.w} onChange={(e) => setSize({ ...size, w: e.target.value })} disabled={!editable} />
-            <Input label="Height" type="number" min={20} value={size.h} onChange={(e) => setSize({ ...size, h: e.target.value })} disabled={!editable} />
+            <Input label="X" type="number" value={value("x")} onChange={edit("x")} disabled={!editable} />
+            <Input label="Y" type="number" value={value("y")} onChange={edit("y")} disabled={!editable} />
+            <Input label="Width" type="number" min={20} value={value("w")} onChange={edit("w")} disabled={!editable} />
+            <Input label="Height" type="number" min={20} value={value("h")} onChange={edit("h")} disabled={!editable} />
           </div>
         )}
         {editable && <Button type="submit" variant="secondary">Save changes</Button>}
