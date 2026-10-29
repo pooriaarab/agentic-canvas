@@ -317,6 +317,9 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | `mount(element, options)` | Render the board UI into an element. It returns `update(options)` and `unmount()`. See Mount the board in your app. |
 | `BoardEditor(options)` | The same board UI as a React component, without a root. |
 | `BoardEditorOptions` (type), `BoardPrincipal` (type), `MountedBoard` (type) | Types for the options, the principal, and the object that `mount` returns. |
+| `CanvasClient` (type), `RoomOptions` (type) | The client type, as in `agentic-canvas/client`, and the live room's base URL and token for the `room` option. |
+
+The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-design/styles.css` too, for the tokens.
 
 ### `agentic-canvas/worker`
 

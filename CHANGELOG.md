@@ -13,7 +13,7 @@ No breaking changes.
 **Changed**
 
 - The Worker page renders the same `BoardEditor` that the embed uses.
-- Each entry builds on its own, so `dist/client.js` does not import a shared chunk.
+- The `./ui` entry shares no code with `dist/client.js`, so a client-only import does not load the UI.
 - The board styles are scoped under `.cv-root`, so they do not change the rest of a host page.
 
 ## 0.4.0
