@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 **Added**
 
@@ -12,6 +12,14 @@
 - Every board route checks the caller's role on the board. A caller with no role gets 404. A board made before this change has no owner (see Limits in the README). The static dev list is not affected.
 - `GET /boards` lists the boards the caller holds a role on.
 - A new board is registered as an identity resource, with its maker as owner. Deleting a board removes its sharing records.
+
+**Fixed**
+
+- A board id, link id, invite id, or subject id that the Store refuses gets a 4xx error with a code, not a 500, on the role gate and the sharing routes.
+
+**Changed**
+
+- Depend on `agentic-design` 0.3 (was 0.2).
 
 ## 0.7.0
 
