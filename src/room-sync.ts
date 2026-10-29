@@ -1,4 +1,5 @@
 import type { Realtime } from "agentic-realtime";
+import * as Y from "yjs";
 import { CanvasError } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
 import type { CanvasService } from "./service.js";
@@ -8,7 +9,7 @@ import type { CanvasService } from "./service.js";
  * from a client: it saves the room to the Store (`pull`) and seeds an empty or behind room from the Store (`seed`).
  *
  * Limits: a room that no request reaches stays unsaved in the Store until the next request. It is safe in the
- * room's own storage, so a restart loses nothing. A stored board over one WebSocket message (1 MiB) cannot seed a room.
+ * room's own storage, so a restart loses nothing. A stored board over one WebSocket message (1 MiB) cannot seed a room, so a client cannot join that board live: the join answers 422.
  */
 
 /** The principal the Worker uses to put the stored board in a room. A save never trusts it as an author. */
@@ -52,7 +53,7 @@ async function roomState(live: Realtime, id: string): Promise<Uint8Array | null>
 }
 
 /** Put an update in a room as the seeder, and wait until the room has handled it. */
-async function send(live: Realtime, id: string, update: Uint8Array): Promise<void> {
+async function send(live: Realtime, id: string, update: Uint8Array, roomVector: Uint8Array): Promise<void> {
   if (update.length > MAX_SEED_BYTES) throw new CanvasError("LIMIT", "the stored board is too big to put in a room");
   const upgrade = new Request("https://room.internal/ws", { headers: { upgrade: "websocket" } });
   const response = await live.connect(id, upgrade, { principal: SEEDER, role: "editor", name: "canvas" });
@@ -70,7 +71,8 @@ async function send(live: Realtime, id: string, update: Uint8Array): Promise<voi
     });
     socket.addEventListener("close", () => fail(new CanvasError("UNAVAILABLE", "the room closed while it was seeded")));
     socket.send(new Uint8Array([SYNC, SYNC_UPDATE, ...varUint(update.length), ...update]));
-    socket.send(new Uint8Array([SYNC, 0, ...varUint(1), 0]));
+    // The query holds the room's own state vector, so the answer is empty and the room has no big reply to send.
+    socket.send(new Uint8Array([SYNC, 0, ...varUint(roomVector.length), ...roomVector]));
   }).finally(() => socket.close(1000, "seeded"));
 }
 
@@ -82,6 +84,11 @@ export async function roomAuthors(live: Realtime, id: string): Promise<Principal
 /** Where the last save of each room stood: its update and compaction counts. A room that has not moved needs no save. */
 const saved = new Map<string, string>();
 
+function remember(id: string, mark: string): void {
+  if (saved.size > 500) saved.clear();
+  saved.set(id, mark);
+}
+
 /** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. */
 export async function pull(live: Realtime, service: CanvasService, id: string): Promise<void> {
   const { updates, compactions } = await live.meta(id);
@@ -89,13 +96,22 @@ export async function pull(live: Realtime, service: CanvasService, id: string): 
   if (saved.get(id) === mark) return;
   const state = await roomState(live, id);
   if (!state) return;
-  await service.checkpoint(id, state, null, await roomAuthors(live, id));
-  if (saved.size > 500) saved.clear();
-  saved.set(id, mark);
+  try {
+    await service.checkpoint(id, state, null, await roomAuthors(live, id));
+  } catch (error) {
+    // A room that fails its checks fails them again until it changes. A busy store is another matter: try that again.
+    if (error instanceof CanvasError && error.code !== "UNAVAILABLE") remember(id, mark);
+    throw error;
+  }
+  remember(id, mark);
 }
 
-/** Give the room what the Store has and it lacks. A room that is not behind gets nothing. It is read as it is, saved or not. */
+/** Give the room what the Store has and it lacks. A room that is not behind gets nothing. It is read as it is, saved or not. Throws when the room cannot take it. */
 export async function seed(live: Realtime, service: CanvasService, id: string): Promise<void> {
-  const missing = await service.missingFrom(id, (await roomState(live, id)) ?? undefined);
-  if (missing) await send(live, id, missing);
+  const state = await roomState(live, id);
+  const missing = await service.missingFrom(id, state ?? undefined);
+  if (!missing) return;
+  const known = new Y.Doc();
+  if (state) Y.applyUpdate(known, state);
+  await send(live, id, missing, Y.encodeStateVector(known));
 }

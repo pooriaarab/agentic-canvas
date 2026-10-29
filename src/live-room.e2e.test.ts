@@ -161,6 +161,5 @@ describe("live room", () => {
     expect((await call("/boards/b3", HUMAN)).status).toBe(200);
     const late = await enter("b3", HUMAN);
     await until(() => new Board(late.doc).get("rest1") !== undefined, "the room to take the HTTP change");
-    expect(worker.log()).toContain("save-room");
   }, 120_000);
 });

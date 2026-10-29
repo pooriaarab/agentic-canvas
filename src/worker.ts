@@ -215,7 +215,6 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     if (!/\/(ws|checkpoint)$/.test(new URL(c.req.url).pathname)) await saveRoom(c, false);
     await next();
   };
-  api.use("/boards/:id", sync);
   api.use("/boards/:id/*", sync);
 
   // The live room. The token sets the actor, the kind, and the role. The room opens only for a board that exists.

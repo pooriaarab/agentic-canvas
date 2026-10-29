@@ -200,7 +200,7 @@ at the same time keep the last write. The board list shows the first 100 boards.
   client needs no seed and no save call. A room that no request reaches stays unsaved in the Store until the
   next request, and it is safe in the room's own storage. `GET /boards/:id/state` and
   `POST /boards/:id/checkpoint` still work for a client that saves by hand. Every save checks author stamps:
-  a client cannot put another author on its work.
+  a client cannot put another author on its work. A stored board over 1,000,000 bytes cannot seed a room: a live join answers 422 for it.
 - The SDK joins a room: `import { LiveBoard, LiveService } from "agentic-canvas/live"`. The CLI and the MCP
   server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
   `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.
