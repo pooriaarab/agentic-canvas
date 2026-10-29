@@ -5,7 +5,7 @@ import { authenticate } from "./worker.js";
 
 const TOKEN = "t".repeat(40);
 const ask = (grant: unknown, token = TOKEN) =>
-  authenticate(new Request("http://x/", { headers: { authorization: `Bearer ${token}` } }), { CANVAS_API_TOKENS: JSON.stringify({ [TOKEN]: grant }) } as never);
+  authenticate(new Request("http://x/", { headers: { authorization: `Bearer ${token}` } }), { CANVAS_UNSAFE_STATIC_TOKENS: "1", CANVAS_API_TOKENS: JSON.stringify({ [TOKEN]: grant }) } as never);
 
 describe("token roles", () => {
   test("a missing role is editor, and viewer is kept", async () => {
@@ -37,7 +37,7 @@ describe("token roles", () => {
 // protocol gets in, bad base64url or bytes that are not UTF-8 throw, an unknown token gets in, a viewer becomes an
 // editor, the token works on a plain request, or a wrong Authorization header falls back to the sub-protocol.
 describe("token as a WebSocket sub-protocol", () => {
-  const env = { CANVAS_API_TOKENS: JSON.stringify({ [TOKEN]: { actor: "a", kind: "human" }, ["v".repeat(40)]: { actor: "v", kind: "human", role: "viewer" } }) } as never;
+  const env = { CANVAS_UNSAFE_STATIC_TOKENS: "1", CANVAS_API_TOKENS: JSON.stringify({ [TOKEN]: { actor: "a", kind: "human" }, ["v".repeat(40)]: { actor: "v", kind: "human", role: "viewer" } }) } as never;
   const b64 = (text: string) => btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const socket = (protocol: string | null, extra: Record<string, string> = {}, upgrade = "websocket") =>
     authenticate(new Request("http://x/", { headers: { ...(upgrade ? { upgrade } : {}), ...(protocol === null ? {} : { "sec-websocket-protocol": protocol }), ...extra } }), env);

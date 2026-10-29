@@ -68,7 +68,7 @@ const offer = (token: string) => `agentic-canvas, agentic-canvas.bearer.${b64(to
 
 describe("live room handshake", () => {
   test("answers 101 for a good token, and 401 for a missing, bad, long or odd token", async () => {
-    worker = await startWorker({ port: PORT, persistTo, vars: [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_REGION:unknown"] });
+    worker = await startWorker({ port: PORT, persistTo, vars: [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_UNSAFE_STATIC_TOKENS:1", "CANVAS_REGION:unknown"] });
     const made = await fetch(`${worker.url}/boards`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, body: JSON.stringify({ id: "b1" }) });
     expect(made.status).toBe(201);
 

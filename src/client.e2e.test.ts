@@ -31,7 +31,7 @@ const persistTo = mkdtempSync(join(tmpdir(), "agentic-canvas-client-"));
 let worker: RunningWorker;
 
 beforeAll(async () => {
-  worker = await startWorker({ port: PORT, persistTo, vars: [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_REGION:unknown"] });
+  worker = await startWorker({ port: PORT, persistTo, vars: [`CANVAS_API_TOKENS:${tokens}`, "CANVAS_UNSAFE_STATIC_TOKENS:1", "CANVAS_REGION:unknown"] });
 }, 120_000);
 
 afterAll(async () => {

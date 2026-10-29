@@ -8,7 +8,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
-  "vars": { "CANVAS_REGION": "eu" },
+  // The demo is a throwaway: it uses the static dev fallback, not identity credentials.
+  "vars": { "CANVAS_REGION": "eu", "CANVAS_UNSAFE_STATIC_TOKENS": "1" },
   "assets": { "directory": "./ui-dist", "run_worker_first": ["/api/*", "/health"] },
   "durable_objects": { "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],

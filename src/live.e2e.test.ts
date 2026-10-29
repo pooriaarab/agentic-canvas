@@ -19,7 +19,7 @@ const PORT = 18830;
 const HUMAN = "human-token-".padEnd(40, "h");
 const BOT = "agent-token-".padEnd(40, "a");
 const VIEWER = "viewer-token-".padEnd(40, "v");
-const vars = [`CANVAS_API_TOKENS:${JSON.stringify({ [HUMAN]: { actor: "ada", kind: "human" }, [BOT]: { actor: "helper", kind: "agent_of_human" }, [VIEWER]: { actor: "eve", kind: "human", role: "viewer" } })}`, "CANVAS_REGION:unknown"];
+const vars = [`CANVAS_API_TOKENS:${JSON.stringify({ [HUMAN]: { actor: "ada", kind: "human" }, [BOT]: { actor: "helper", kind: "agent_of_human" }, [VIEWER]: { actor: "eve", kind: "human", role: "viewer" } })}`, "CANVAS_UNSAFE_STATIC_TOKENS:1", "CANVAS_REGION:unknown"];
 const persistTo = mkdtempSync(join(tmpdir(), "agentic-canvas-live-"));
 let worker: RunningWorker | undefined;
 const server = () => worker!.url.replace("/api/v1/canvas", "");

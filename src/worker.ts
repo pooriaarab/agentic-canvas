@@ -1,4 +1,4 @@
-import { hasScope, parsePrincipal, parseRegion, type Auth, type Blobs, type Region } from "agentic-identity";
+import { createStoreAuth, hasScope, parsePrincipal, parseRegion, type Auth, type Blobs, type Region, type Store } from "agentic-identity";
 import type { Realtime } from "agentic-realtime";
 import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } from "agentic-identity/cloudflare";
 import { acceptWebSocketProtocol, principalFromWebSocketRequest } from "agentic-identity/http";
@@ -12,10 +12,16 @@ export interface WorkerEnv {
   DB: D1Like;
   IMAGES: R2Like;
   /**
+   * Dev fallback. Set it to "1" to let `CANVAS_API_TOKENS` sign requests in. Without it, `CANVAS_API_TOKENS` is not read,
+   * and a request that sets it gets 503, so a deploy never trusts a static list by accident. Never set it in production.
+   */
+  CANVAS_UNSAFE_STATIC_TOKENS?: string;
+  /**
+   * Dev fallback, read only when `CANVAS_UNSAFE_STATIC_TOKENS` is "1". It is tried after the identity credentials.
    * JSON: `{ "<token>": { "actor": "ada", "kind": "human", "role": "viewer" } }`. A token has 32 characters or more.
    * A grant needs an actor id and a kind. A token with a missing or bad part gets 401.
    * The role is "editor" (the default) or "viewer". A viewer reads and cannot write, over HTTP or in a live room.
-   * Without this setting, every request gets 401. Every token reaches every board.
+   * Every token reaches every board, and a token cannot be revoked without a new deploy.
    */
   CANVAS_API_TOKENS?: string;
   /**
@@ -91,9 +97,53 @@ function tokenAuth(env: WorkerEnv): Auth {
   };
 }
 
-/** The principal and role for a bearer token, or null. The kind is never defaulted: a grant without a valid kind gets null. */
-export async function authenticate(request: Request, env: WorkerEnv): Promise<{ actor: Principal; role: Role } | null> {
-  const found = await principalFromWebSocketRequest(request, tokenAuth(env), { protocol: WS_PROTOCOL });
+const staticTokensOn = (env: WorkerEnv) => env.CANVAS_UNSAFE_STATIC_TOKENS === "1";
+
+/** The default: credentials and principals in the Store (agentic-identity). The static list, when it is on, is tried after them. */
+function workerAuth(env: WorkerEnv, store?: Store): { auth: Auth; failure(): unknown } {
+  const auths: Auth[] = [];
+  if (store) auths.push(createStoreAuth(store));
+  if (staticTokensOn(env)) auths.push(tokenAuth(env));
+  // The http helper turns a throw into a 401. A store that fails is no wrong credential: keep the error so the caller can raise it.
+  let failure: unknown;
+  const auth: Auth = {
+    async authenticate(request) {
+      for (const auth of auths) {
+        let found: Awaited<ReturnType<Auth["authenticate"]>>;
+        try {
+          found = await auth.authenticate(request);
+        } catch (error) {
+          failure = error;
+          return null;
+        }
+        if (!found) continue;
+        // The kind and the id must pass the principal rules. The room's own seeder name is never a caller.
+        let step: Principal;
+        try {
+          step = parsePrincipal({ kind: found.kind, id: found.principalId });
+        } catch {
+          return null;
+        }
+        if (step.kind === SEEDER.kind && step.id === SEEDER.id) return null;
+        return found;
+      }
+      return null;
+    },
+  };
+  return { auth, failure: () => failure };
+}
+
+/**
+ * The principal and role for a request, or null. A credential issued by agentic-identity (a bearer key or an access token in the
+ * store) signs in. Its scopes set the role: `canvas:write` is an editor, `canvas:read` a viewer, and none is denied.
+ * The static list signs in only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. The kind is never defaulted: a principal without a valid kind gets null.
+ * Without `store` only the static list is read.
+ */
+export async function authenticate(request: Request, env: WorkerEnv, store?: Store): Promise<{ actor: Principal; role: Role } | null> {
+  const { auth, failure } = workerAuth(env, store);
+  const found = await principalFromWebSocketRequest(request, auth, { protocol: WS_PROTOCOL, scope: "canvas:read" });
+  // A store that failed is a 503 or a 500, never a 401: the caller must not think its credential is wrong.
+  if (failure() !== undefined) throw failure();
   if (found instanceof Response) return null;
   return { actor: { kind: found.kind, id: found.principalId }, role: hasScope(found.scopes, "canvas:write") ? "editor" : "viewer" };
 }
@@ -192,13 +242,16 @@ export function createApp(options: AppOptions = {}): Hono<App> {
       return fail("NOT_CONFIGURED", 'set CANVAS_REGION to "eu", "us", or "unknown"', 503);
     }
     if (!c.env.DB || !c.env.IMAGES) return fail("NOT_CONFIGURED", "bind DB (D1) and IMAGES (R2)", 503);
-    const who = await authenticate(c.req.raw, c.env);
+    // A static list that is set but not switched on is a setup mistake. Refuse it loudly: it never signs anyone in.
+    if (c.env.CANVAS_API_TOKENS && !staticTokensOn(c.env)) return fail("NOT_CONFIGURED", "CANVAS_API_TOKENS is a dev fallback. Set CANVAS_UNSAFE_STATIC_TOKENS=1 to use it, or remove it and issue agentic-identity credentials", 503);
+    await ready(c.env.DB);
+    const store = createD1Store(c.env.DB, { region });
+    const who = await authenticate(c.req.raw, c.env, store);
     if (!who) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
     if (who.role === "viewer" && c.req.method !== "GET") return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
     c.set("actor", who.actor);
     c.set("role", who.role);
-    await ready(c.env.DB);
-    c.set("service", new CanvasService(createD1Store(c.env.DB, { region })));
+    c.set("service", new CanvasService(store));
     // The Worker serves image bytes itself and never makes a signed URL, so this secret signs nothing. It must exist, and it is new each time.
     c.set("blobs", createR2Blobs(c.env.IMAGES, { region, urlBase: new URL(c.req.url).origin, urlSecret: `${crypto.randomUUID()}${crypto.randomUUID()}` }));
     await next();

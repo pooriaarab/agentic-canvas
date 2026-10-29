@@ -6,7 +6,8 @@
   // Create the bucket in the EU jurisdiction:
   //   wrangler r2 bucket create agentic-canvas-images --jurisdiction eu
   // Local `wrangler dev` keeps its own copy and ignores the id.
-  // Set CANVAS_API_TOKENS with `wrangler secret put CANVAS_API_TOKENS`. Without it, every request gets 401.
+  // Callers sign in with agentic-identity credentials in the same D1 database (see "Auth" in the README). Without one, a request gets 401.
+  // CANVAS_API_TOKENS (a static token list) is a dev fallback. It works only with CANVAS_UNSAFE_STATIC_TOKENS=1, and it is not set here.
   // Set CANVAS_REGION ("eu" or "us") for each deploy, for example with --var. It is the region the
   // database and the bucket live in. A real D1 confirms it on each query. Local `wrangler dev` needs "unknown". No default is set here.
   "name": "agentic-canvas",

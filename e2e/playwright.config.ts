@@ -23,7 +23,7 @@ export default defineConfig({
   timeout: 60_000,
   use: { baseURL: `http://127.0.0.1:${PORT}`, viewport: { width: 1280, height: 800 } },
   webServer: {
-    command: `rm -rf ../test-results/.state && node ../node_modules/wrangler/bin/wrangler.js dev --ip 127.0.0.1 --port ${PORT} --inspector-port ${PORT + 100} --persist-to ../test-results/.state --var CANVAS_REGION:unknown --var 'CANVAS_API_TOKENS:${grants}'`,
+    command: `rm -rf ../test-results/.state && node ../node_modules/wrangler/bin/wrangler.js dev --ip 127.0.0.1 --port ${PORT} --inspector-port ${PORT + 100} --persist-to ../test-results/.state --var CANVAS_REGION:unknown --var CANVAS_UNSAFE_STATIC_TOKENS:1 --var 'CANVAS_API_TOKENS:${grants}'`,
     url: `http://127.0.0.1:${PORT}/health`,
     timeout: 120_000,
     reuseExistingServer: false,
