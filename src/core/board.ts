@@ -137,6 +137,7 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
 const isBindable = (type: unknown): boolean => typeof type === "string" && type !== "connector" && type !== "group";
 const isValidZ = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= MAX_Z;
 const clampZ = (value: number): number => Math.min(MAX_Z, Math.max(-MAX_Z, value));
+const samePrincipal = (a: Principal, b: Principal): boolean => a.kind === b.kind && a.id === b.id;
 const hasId = (e: unknown): e is { id: string } => typeof e === "object" && e !== null && typeof (e as { id?: unknown }).id === "string";
 
 /**
@@ -247,6 +248,42 @@ export class Board {
       loose.forEach((l) => (this.elements.get(l) as Y.Map<unknown> | undefined)?.delete("groupId"));
     });
     return [...new Set([...doomed, ...detached, ...loose])].sort();
+  }
+
+  /**
+   * Make the author stamps of a merged board honest. `prior` is the board before the merge, and `trusted`
+   * says whether a principal really wrote in this session. A new element stamped by anyone else is deleted.
+   * On an old element the author never changes, and an edit stamped by an untrusted principal gets the stamp
+   * of the prior edit back. A title stamped by an untrusted principal gets the prior title back.
+   * Returns the ids it deleted or restored.
+   */
+  restamp(prior: Board, trusted: (who: Principal) => boolean): string[] {
+    const before = new Map(prior.allStored().map((e) => [e.id, e]));
+    const fixed: string[] = [];
+    this.doc.transact(() => {
+      for (const el of this.allStored()) {
+        const old = before.get(el.id);
+        const entry = this.elements.get(el.id)!;
+        if (!old) {
+          if (trusted(el.author) && trusted(el.editedBy)) continue;
+          this.elements.delete(el.id);
+        } else {
+          const authorKept = samePrincipal(el.author, old.author);
+          if (authorKept && (trusted(el.editedBy) || samePrincipal(el.editedBy, old.editedBy))) continue;
+          if (!authorKept) entry.set("author", old.author);
+          if (!trusted(el.editedBy)) entry.set("editedBy", old.editedBy);
+        }
+        fixed.push(el.id);
+      }
+      const by = this.titleBy;
+      if (by && !trusted(by) && !(prior.titleBy && samePrincipal(by, prior.titleBy))) {
+        if (prior.titleBy) this.meta.set("titleBy", prior.titleBy);
+        else this.meta.delete("titleBy");
+        this.meta.set("title", prior.title);
+        fixed.push("title");
+      }
+    });
+    return fixed;
   }
 
   addShape(input: unknown, actor: Principal): Shape {

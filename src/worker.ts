@@ -29,6 +29,8 @@ export interface WorkerEnv {
 const MIN_TOKEN_LENGTH = 32;
 const DEFAULT_MAX_IMAGE_BYTES = 1_000_000;
 const MAX_JSON_BYTES = 1_000_000;
+/** The most a live room saves. A room holds 1.5 MB at most, so a bigger update is not from one. */
+export const MAX_LIVE_BYTES = 1_572_864;
 export type Role = "editor" | "viewer";
 type App = { Bindings: WorkerEnv; Variables: { service: CanvasService; blobs: Blobs; actor: Principal; role: Role } };
 
@@ -192,6 +194,18 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     await c.var.service.assertExists(id);
     const { actor, role } = c.var;
     return options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
+  });
+
+  // A live room reads its start state here and saves its state back. These are sync plumbing, not board commands.
+  api.get("/boards/:id/state", async (c) => c.body(new Uint8Array(await c.var.service.state(c.req.param("id"))), 200, { "content-type": "application/octet-stream" }));
+  api.post("/boards/:id/checkpoint", async (c) => {
+    const id = c.req.param("id");
+    await c.var.service.assertExists(id); // no room is made for a board that does not exist
+    const update = await readLimited(c.req.raw, MAX_LIVE_BYTES);
+    if (!update) throw new CanvasError("INVALID", `the update must be at most ${MAX_LIVE_BYTES} bytes`);
+    const room = options.live?.(c.env);
+    const authors = room && (await room.meta(id)).contributors.map(({ id: who, kind }) => ({ id: who, kind }));
+    return c.json(await c.var.service.checkpoint(id, update, c.var.actor, authors));
   });
 
   api.post("/boards", async (c) => {

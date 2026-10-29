@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import { assertId, StoreConflictError, type Store } from "agentic-identity";
 import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
@@ -99,6 +100,37 @@ export class CanvasService {
   async exportSvg(id: string): Promise<string> {
     boardKey(id);
     return this.store.transaction(async (tx) => toSvg(await this.load(tx.get(COLLECTION, id), id)));
+  }
+
+  /** The stored board as a Yjs update. A live room starts from it. */
+  async state(id: string): Promise<Uint8Array> {
+    boardKey(id);
+    return this.store.transaction(async (tx) => (await this.load(tx.get(COLLECTION, id), id)).encode());
+  }
+
+  /**
+   * Merge a live room's state into the stored board. `authors` are the principals the room saw send updates.
+   * An element stamped by anyone else is deleted, and a changed author is put back (see `Board.restamp`),
+   * so a client that writes raw Yjs cannot put another author on its work. Broken entries are repaired and
+   * a board past the element cap is refused. Returns the ids the checks fixed.
+   */
+  async checkpoint(id: string, update: Uint8Array, actor: Principal, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
+    boardKey(id);
+    const by = principalSchema.safeParse(actor);
+    if (!by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
+    const trusted = (who: Principal) => [by.data, ...authors].some((a) => a.kind === who.kind && a.id === who.id);
+    return this.store.transaction(async (tx) => {
+      const prior = await this.load(tx.get(COLLECTION, id), id);
+      const next = prior.clone();
+      try {
+        Y.applyUpdate(next.doc, update);
+      } catch {
+        throw new CanvasError("INVALID", "the update is not a Yjs update");
+      }
+      const fixed = new Set([...next.restamp(prior, trusted), ...next.repair()]);
+      await tx.put(COLLECTION, id, { update: toBase64(next.encode()) });
+      return { elements: next.list().length, fixed: [...fixed].sort() };
+    });
   }
 
   /** Owner only. Repair a board and delete the named elements. Only a human actor may call it. */
