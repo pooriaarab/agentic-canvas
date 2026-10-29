@@ -7,18 +7,19 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: early. The board model, the agent operations, the exports, the CLI,
-> and the MCP server work. It is not on npm yet. The HTTP API and the web UI are
-> not built yet.
+> Status: 0.1.0, the first release. The board model, the agent operations, the
+> exports, the CLI, and the MCP server work. The HTTP API and the web UI are not
+> built yet.
 
 ## Install
 
-Not on npm yet. Build from source:
+Node 22 or newer.
 
 ```sh
-npm ci
-npm run build
+npm install agentic-canvas
 ```
+
+To build from source instead, run `npm ci` and `npm run build`.
 
 PNG export is optional. It needs the `playwright-core` package (Apache-2.0) and a
 Chromium: `npm i playwright-core && npx playwright-core install chromium`.
@@ -101,7 +102,7 @@ the direction. Lines that start with `#` or `//` are comments.
 - A CLI over a local file store. Several processes can write at once.
 - An MCP server (stdio) over the same service as the CLI.
 - Yjs underneath: two copies of a board merge without conflicts.
-- No UI code. The model runs in Node and in a Worker.
+- No UI code. The model is plain TypeScript on Yjs, with no outbound calls.
 
 ## Limits
 
@@ -132,8 +133,6 @@ the direction. Lines that start with `#` or `//` are comments.
 - Node 22 or newer is needed. `agentic-canvas/file-store` exports `createFileStore(path)` and
   `openLocalStore(dir)`. A writer that is paused for more than 30 seconds can lose its lock
   and then still write.
-- Boards from the old layout, `boards/<id>.json`, are not read. Package version 0.0.0 had no
-  release, so there is no import.
 - Delete leaves no audit record yet. The caller logs it.
 - PNG needs the optional `playwright-core` and a Chromium. Without them it fails with
   `UNAVAILABLE`. SVG always works.
