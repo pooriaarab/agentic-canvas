@@ -29,6 +29,22 @@ describe("owner repair actor", () => {
   });
 });
 
+describe("delete", () => {
+  test("removes one board, keeps the others, refuses a missing or bad id, and lets the id be used again", async () => {
+    const service = new CanvasService(openLocalStore(join(root, `d${n++}`)));
+    await service.create(human, { id: "a", title: "A" });
+    await service.create(human, { id: "b" });
+    await service.add("a", { id: "s", type: "rect", x: 0, y: 0 }, human);
+    expect(await service.delete("a")).toEqual({ deleted: "a" });
+    expect((await service.list()).map((x) => x.id)).toEqual(["b"]);
+    await expect(service.read("a")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(service.delete("a")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(service.delete("../x")).rejects.toMatchObject({ code: "INVALID" });
+    await service.create(human, { id: "a" });
+    expect((await service.read("a")).nodes).toEqual([]);
+  });
+});
+
 // Failure-mode list for the live checkpoint, written before `checkpoint` and `restamp`. A save must undo:
 //  1. A new element, or a title, stamped by a principal the room never saw.
 //  2. A changed author, a forged editor, or a content change that keeps an old stamp.

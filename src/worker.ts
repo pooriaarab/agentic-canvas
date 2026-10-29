@@ -5,7 +5,7 @@ import { acceptWebSocketProtocol, principalFromWebSocketRequest } from "agentic-
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
-import { handSave, pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
+import { forget, handSave, pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
 import { CanvasService, MAX_LIVE_BYTES } from "./service.js";
 
 export interface WorkerEnv {
@@ -266,6 +266,23 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json(await c.var.service.create(c.var.actor, { id, title }), 201);
   });
   api.get("/boards/:id", async (c) => c.json(await c.var.service.read(c.req.param("id"))));
+  // `sync` saves the room first, and a room that fails its checks is skipped, so its unsaved edits may be lost here.
+  // The room is erased, then the board. The room is erased again after the delete: a client that joined in between
+  // would have seeded it from the stored board, and a new board of the same id must not refill from it.
+  // If the first erase fails, the board stays.
+  api.delete("/boards/:id", async (c) => {
+    const id = c.req.param("id");
+    await c.var.service.assertExists(id);
+    const live = options.live?.(c.env);
+    if (live) await live.erase(id);
+    const deleted = await c.var.service.delete(id);
+    if (live) {
+      await live.erase(id);
+      forget(id);
+    }
+    console.log(JSON.stringify({ level: "info", op: "delete-board", actorKind: c.var.actor.kind }));
+    return c.json(deleted);
+  });
   api.get("/boards/:id/svg", async (c) =>
     new Response(await c.var.service.exportSvg(c.req.param("id")), { headers: { "content-type": "image/svg+xml", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:" } }));
   api.post("/boards/:id/shapes", async (c) => c.json(await c.var.service.add(c.req.param("id"), await jsonBody(c), c.var.actor), 201));

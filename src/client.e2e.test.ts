@@ -145,6 +145,15 @@ describe("the remote client", () => {
     expect(await failure(odd.me())).toMatchObject({ code: "HTTP_ERROR", status: 502 });
   });
 
+  test("deletes a board, and a second delete is NOT_FOUND", async () => {
+    const human = createClient({ baseUrl: worker.url, token: HUMAN });
+    await human.createBoard({ id: "gone" });
+    expect(await failure(createClient({ baseUrl: worker.url, token: VIEWER }).deleteBoard("gone"))).toMatchObject({ code: "FORBIDDEN", status: 403 });
+    expect(await human.deleteBoard("gone")).toEqual({ deleted: "gone" });
+    expect(await failure(human.readBoard("gone"))).toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(await failure(human.deleteBoard("gone"))).toMatchObject({ code: "NOT_FOUND", status: 404 });
+  });
+
   test("the built client has no Node imports", () => {
     // `ci:local` builds first, so a missing file is a failure.
     const built = readFileSync(new URL("../dist/client.js", import.meta.url), "utf8");

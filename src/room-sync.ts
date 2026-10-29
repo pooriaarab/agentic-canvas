@@ -156,6 +156,11 @@ function remember(id: string, mark: string): void {
   saved.set(id, mark);
 }
 
+/** Drop what is remembered of a room, for a room that was erased. A new room of the same id starts at the same counts. */
+export function forget(id: string): void {
+  saved.delete(id);
+}
+
 /** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. Returns the save, or null when none was needed. `force` saves even when the room has not changed since a save that failed. */
 export async function pull(live: Realtime, service: CanvasService, id: string, force = false): Promise<{ elements: number; fixed: string[] } | null> {
   const { updates, compactions } = await live.meta(id);

@@ -53,6 +53,11 @@ export function createMcpServer(service: BoardAccess, actor: Principal): McpServ
     tool(async (a) => json(await service.read(a.board))),
   );
   server.registerTool(
+    "delete_board",
+    { description: "Delete a whole board for good. It cannot be undone.", inputSchema: { board }, annotations: { destructiveHint: true } },
+    tool(async (a) => json(await service.delete(a.board))),
+  );
+  server.registerTool(
     "add_shape",
     {
       description: "Add a shape. Image shapes need src.",

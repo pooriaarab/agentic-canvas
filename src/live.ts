@@ -187,6 +187,14 @@ export class LiveService implements BoardAccess {
     return boards as { id: string; title: string }[];
   }
 
+  async delete(id: string): Promise<{ deleted: string }> {
+    const response = await call(this.options.server, this.options.token, `/boards/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) throw await refusal(response, "the server refused the request");
+    const { deleted } = await json(response);
+    if (deleted !== id) throw new CanvasError("INVALID", "the server sent a result this client does not know");
+    return { deleted };
+  }
+
   async read(id: string): Promise<BoardData & { id: string }> {
     return this.use(id, async (live) => ({ id, ...readBoard(live.board) }));
   }

@@ -121,5 +121,16 @@ describe("live CLI and MCP", () => {
     expect(after.title).toBe("Plan");
     expect(after.nodes.map((n: { id: string }) => n.id)).toEqual(expect.arrayContaining(["from-agent", "from-cli", "from-room"]));
     expect(after.nodes).toHaveLength(4);
+
+    // Delete through the CLI and through MCP, in live mode. A viewer cannot.
+    expect(await cli(["delete", "b1"], env(VIEWER))).toMatchObject({ code: 1, err: expect.stringContaining("FORBIDDEN") });
+    expect(await cli(["delete", "b1"], env(HUMAN))).toMatchObject({ code: 0, out: '{"deleted":"b1"}\n' });
+    expect(await cli(["read", "b1"], env(HUMAN))).toMatchObject({ code: 1, err: expect.stringContaining("NOT_FOUND") });
+    await cli(["new", "--id", "b2"], env(HUMAN));
+    const agent = new Client({ name: "test", version: "0" });
+    await agent.connect(new StdioClientTransport({ command: process.execPath, args: [BIN, "mcp"], env: env(BOT), stderr: "pipe" }));
+    const gone = (await agent.callTool({ name: "delete_board", arguments: { board: "b2" } })) as { content: { text: string }[] };
+    expect(JSON.parse(gone.content[0].text)).toEqual({ deleted: "b2" });
+    await agent.close();
   }, 240_000);
 });

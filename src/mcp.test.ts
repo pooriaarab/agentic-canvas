@@ -77,7 +77,20 @@ describe("tools", () => {
     const client = await connect(fresh());
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     await client.close();
-    expect(names).toEqual(["add_shape", "connect", "create_board", "draw_flow", "export_png", "export_svg", "list_boards", "move", "read_board", "remove", "update_element"]);
+    expect(names).toEqual(["add_shape", "connect", "create_board", "delete_board", "draw_flow", "export_png", "export_svg", "list_boards", "move", "read_board", "remove", "update_element"]);
+  });
+
+  test("deletes a board, and a second delete is a NOT_FOUND tool error", async () => {
+    const client = await connect(fresh());
+    try {
+      await call(client, "create_board", { id: "d1" });
+      expect((await call(client, "delete_board", { board: "d1" })).value).toEqual({ deleted: "d1" });
+      expect((await call(client, "list_boards", {})).value).toEqual({ boards: [] });
+      const again = await call(client, "delete_board", { board: "d1" });
+      expect([again.error, again.value.code]).toEqual([true, "NOT_FOUND"]);
+    } finally {
+      await client.close();
+    }
   });
 
   test("lists boards and resizes an element, and the edit keeps the author", async () => {

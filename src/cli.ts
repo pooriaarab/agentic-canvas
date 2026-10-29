@@ -25,6 +25,7 @@ Commands:
   connect <board> <from> <to> [--text <t>] Join two shapes with an arrow.
   update <board> <element> [--x --y --w --h --text --fill --stroke]  Change fields of an element. Resize with --w and --h.
   move <board> <element> --dx <n> --dy <n> Move an element or a group.
+  delete <board>                           Delete a whole board for good.
   rm <board> <element>                     Delete an element.
   flow <board> --text <t> | --file <p>     Draw a flowchart from text ("A -> B: label"). Use --file - for stdin.
   export <board> [--format svg|png] [--out <path>]  Print SVG, or write PNG to --out.
@@ -122,6 +123,10 @@ async function run(argv: string[]): Promise<void> {
     case "move":
       need(2, "<board> <element> --dx <n> --dy <n>");
       return print(await service.move(board, rest[0], num(v.dx) ?? Number.NaN, num(v.dy) ?? Number.NaN, actor()));
+    case "delete":
+      need(1, "<board>");
+      actor();
+      return print(await service.delete(board));
     case "rm":
       need(2, "<board> <element>");
       return print(await service.remove(board, rest[0]));

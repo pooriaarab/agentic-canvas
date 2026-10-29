@@ -105,6 +105,16 @@ describe("failures exit 1", () => {
       expect(r.err).toContain("INVALID");
     }
   });
+  test("delete removes a board, and a second delete or a missing board exits 1", async () => {
+    const dir = fresh();
+    await cli(dir, ["new", "--id", "b"], human);
+    await cli(dir, ["new", "--id", "keep"], human);
+    expect(JSON.parse((await cli(dir, ["delete", "b"], human)).out)).toEqual({ deleted: "b" });
+    expect(JSON.parse((await cli(dir, ["list"])).out).boards.map((b: { id: string }) => b.id)).toEqual(["keep"]);
+    for (const args of [["delete", "b"], ["delete", "../escape"]]) expect(await cli(dir, args, human)).toMatchObject({ code: 1, out: "" });
+    expect((await cli(dir, ["delete", "b"], human)).err).toContain("NOT_FOUND");
+    expect(await cli(dir, ["delete"], human)).toMatchObject({ code: 2, out: "" });
+  });
   test("a board id cannot climb out of the folder", async () => {
     const dir = fresh();
     for (const id of ["../escape", "a/b", "..", "x".repeat(65)]) {
