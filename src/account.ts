@@ -1,12 +1,11 @@
 // The package's side of the account contract: a host calls `exportAccount` and `eraseAccount` and never reads the
-// storage layout. The shape is provisional, like the one in the other app packages: it is the contract that a later
+// storage layout. The shape is provisional, as in other agentic packages: it is the contract that a later
 // `agentic-identity` release adds to `agentic-identity/account` as `AccountPackage`. The `AccountApp` of 0.9.0 is a
 // different contract (files for a zip), and this does not fit it.
-import { createSharing, ROLES, SUBJECT_KINDS, type Json, type PrincipalContext, type Store } from "agentic-identity";
+import { createSharing, ROLES, type Json, type PrincipalContext, type Store } from "agentic-identity";
 import { Board, CanvasError } from "./core/board.js";
-import type { Principal } from "./core/principal.js";
+import { principalSchema, type Principal } from "./core/principal.js";
 import { RESOURCE_TYPE } from "./access.js";
-import { readBoard } from "./core/read.js";
 import { CanvasService, fromBase64, isBoardId, isStoreId, toBase64 } from "./service.js";
 
 export interface CanvasAccountDeps {
@@ -30,12 +29,13 @@ export interface CanvasAccount {
   /**
    * Deletes the boards the subject is the only owner of, with their grants, invites, links, and audit entries. On every other
    * board it removes the subject's grant and invites, deletes the elements the subject made, sets the editor of the
-   * elements it edited to `erased`, clears a title it set, and sets its audit entries to `(erased)`. Counts by the same collection
+   * elements it edited to `(erased)`, clears a title it set, and sets its audit entries to `(erased)`. Counts by the same collection
    * names. A second run counts zero. Run it with writes stopped: a write after the export is erased and not exported.
    */
   eraseAccount(subject: Principal, deps: CanvasAccountDeps): Promise<Record<CanvasCollection, number>>;
 }
 
+/** Not a valid principal id, so no real principal can be named like it, and a stamp of it is never found again. */
 const ERASED = "(erased)";
 const PAGE = 100;
 
@@ -58,8 +58,8 @@ const plain = (value: unknown): Json[] => JSON.parse(JSON.stringify(value)) as J
 
 function check(subject: Principal, deps: CanvasAccountDeps): void {
   if (typeof deps?.store?.query !== "function") throw new CanvasError("INVALID", "canvasAccount needs deps.store");
-  // Only a person or an agent holds a role, so any other kind has nothing to export and would pass.
-  if (!(SUBJECT_KINDS as readonly unknown[]).includes(subject?.kind) || typeof subject.id !== "string" || !isStoreId(subject.id)) throw new CanvasError("INVALID", "subject needs an id and a known kind");
+  // Every principal kind may stamp an element or an audit entry, so every kind is a subject. A kind that holds no role has no grants.
+  if (!principalSchema.safeParse(subject).success) throw new CanvasError("INVALID", "subject needs an id and a known kind");
 }
 
 interface Held { grantId: string; resourceId: string; role: string }
@@ -70,10 +70,13 @@ async function held(store: Store, subject: Principal): Promise<{ all: Held[]; so
   const sole = new Set<string>();
   for await (const { id: grantId, data } of pages(store, "grants", { subjectKind: subject.kind, subjectId: subject.id })) {
     const { resourceId: id, role } = data;
-    if (typeof id !== "string" || typeof role !== "string" || !(ROLES as readonly string[]).includes(role)) continue;
-    if ((await store.get("resources", id))?.type !== RESOURCE_TYPE) continue;
+    // A grant that we cannot read may be a canvas grant: stop, and do not report an erase that left it.
+    if (typeof id !== "string" || typeof role !== "string" || !(ROLES as readonly string[]).includes(role)) throw new CanvasError("INVALID", `grant "${grantId}" of the subject is damaged`);
+    const resource = await store.get("resources", id);
+    // A grant with no resource is what an erase that stopped half way leaves. A resource of another type is another app's.
+    if (resource !== null && resource.type !== RESOURCE_TYPE) continue;
     all.push({ grantId, resourceId: id, role });
-    if (role !== "owner") continue;
+    if (resource === null || role !== "owner") continue;
     const owners = await rows(store, "grants", { resourceId: id, role: "owner" });
     if (owners.every((o) => o.data.subjectKind === subject.kind && o.data.subjectId === subject.id)) sole.add(id);
   }
@@ -148,9 +151,10 @@ export const canvasAccount: CanvasAccount = {
       out.edited_elements.push(...plain(found.edited.map((elementId) => ({ boardId: id, elementId }))));
       if (found.titleBy) out.titles.push(...plain([{ boardId: id, title: board.title }]));
     }
+    // Invites hold `createdBy` as an id with no kind: ids are unique across kinds in the identity store. The fields are listed, so a new one is not exported by chance.
     for (const { id, data } of await rows(store, "invites", { createdBy: subject.id })) {
-      const { email: _email, ...rest } = data;
-      out.invites.push(...plain([{ id, ...rest }]));
+      const { resourceId, role, expiresAt, acceptedAt, revokedAt } = data;
+      out.invites.push(...plain([{ id, resourceId, role, expiresAt, acceptedAt, revokedAt }]));
     }
     out.audit.push(...plain((await auditOf(store, subject)).map((r) => r.data)));
     return out;
@@ -196,10 +200,12 @@ export const canvasAccount: CanvasAccount = {
         const doc = await tx.get("boards", id);
         if (!doc) return null;
         const board = Board.open(fromBase64(String(doc.update)));
-        const counts = board.eraseStamps(subject, { kind: subject.kind, id: "erased" });
+        const counts = board.eraseStamps(subject, { kind: subject.kind, id: ERASED });
         await tx.put("boards", id, { update: toBase64(board.encode()) });
         return counts;
       });
+      // A client that joined between the first erase and the write loaded the old state. Erase the room again.
+      await deps.eraseRoom?.(id);
       if (!done) continue;
       total.authored_elements += done.authored;
       total.edited_elements += done.edited;

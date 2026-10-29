@@ -243,11 +243,11 @@ const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { 
 The export is plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
 
 - A board that the subject alone owns is deleted with its grants, invites, links, and audit entries. `eraseRoom(boardId)` erases its live room first: give it when rooms run.
-- On any other board, the subject's grant and invites go. The elements it made are deleted. A connector of someone else that was bound to one of them goes too. The members of a deleted group move to its parent. The editor of an element it only edited becomes `erased`, and a title it set is cleared.
+- On any other board, the subject's grant and invites go. The elements it made are deleted. A connector of someone else that was bound to one of them goes too, and no count or export lists it. The members of a deleted group move to its parent. The editor of an element it only edited becomes `(erased)`, and a title it set is cleared.
 - Its audit entries (it acted, or a grant named it) stay with the id set to `(erased)`. The kinds stay, so an entry still says if a machine acted.
 - A second erase counts zero. Stop writes first: a write between export and erase is erased and not exported.
 - The erase reads every stored board to find the subject's elements. It stops with `INVALID` on a board that does not decode.
-- The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
+- The subject is any principal kind, for example `agent_of_human`: call once for each principal. The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
 
 ## UI
 

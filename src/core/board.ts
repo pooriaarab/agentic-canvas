@@ -448,7 +448,7 @@ export class Board {
   /**
    * Erase `who` from the board. An element they made is deleted alone: its members go to its parent group, and a
    * connector of someone else that was bound to it goes too, because it would be hidden. An element they only edited
-   * keeps its content, and its editor becomes `erased`. A title they set is cleared. Idempotent. Returns the counts.
+   * keeps its content, and its editor becomes `(erased)`. A title they set is cleared. Idempotent. Returns the counts.
    */
   eraseStamps(who: Principal, erased: Principal): { authored: number; edited: number; dangling: number; title: boolean } {
     const mine = new Set<string>();

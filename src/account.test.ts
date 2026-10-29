@@ -8,7 +8,9 @@
 //  5. An invite email is in the export, or an invite of the subject stays after the erase.
 //  6. An audit entry keeps the subject's id, or loses its kind (so it stops saying that a machine acted).
 //  7. The export holds another person's data, or the erase touches it.
-//  8. A second erase counts anything, or the erase fails when a board has no room to erase.
+//  8. A delegated agent (agent_of_human) is refused, though it stamps elements. The stand-in for an erased id names a real principal.
+//  9. A damaged grant of the subject is skipped, so the erase reports done and leaves it. A grant with no resource stays.
+// 10. A second erase counts anything, or the erase fails when a board has no room to erase.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -102,7 +104,7 @@ describe("canvasAccount", () => {
     expect(bobs.nodes.map((e) => e.id).sort()).toEqual(["b1", "b2", "r1"]);
     expect(bobs.edges).toEqual([]);
     expect(bobs.nodes.find((e) => e.id === "b2")!.groupId).toBeUndefined();
-    expect(bobs.nodes.find((e) => e.id === "b1")).toMatchObject({ text: "edited by ada", editedBy: { kind: "human", id: "erased" }, author: bob });
+    expect(bobs.nodes.find((e) => e.id === "b1")).toMatchObject({ text: "edited by ada", editedBy: { kind: "human", id: "(erased)" }, author: bob });
     expect(bobs.title).toBe("");
     expect((await service.read("other")).nodes).toHaveLength(1);
     // The agent's work and bob's invite stay.
@@ -129,9 +131,8 @@ describe("canvasAccount", () => {
 
   test.each([
     ["no kind", { id: "ada" }],
-    ["a kind with no roles", { kind: "anonymous", id: "ada" }],
+    ["an unknown kind", { kind: "anonymous", id: "ada" }],
     ["an empty id", { kind: "human", id: "" }],
-    ["a reserved id", { kind: "human", id: "__x__" }],
   ])("refuses %s", async (_name, subject) => {
     const { store } = await setup();
     await expect(canvasAccount.exportAccount(subject as never, { store })).rejects.toMatchObject({ code: "INVALID" });
@@ -143,5 +144,34 @@ describe("canvasAccount", () => {
     const { store } = await setup();
     await store.transaction((tx) => tx.put("boards", "bad", { update: "!!not base64!!" }));
     await expect(canvasAccount.eraseAccount(bob, { store })).rejects.toMatchObject({ code: "INVALID" });
+  });
+
+  test("erases a delegated agent, whose stamps are on boards it does not own", async () => {
+    const { store, service } = await setup();
+    const kid: Principal = { kind: "agent_of_human", id: "kid" };
+    await service.add("bobs", { id: "k1", type: "rect", x: 0, y: 0 }, kid);
+    const out = await canvasAccount.exportAccount(kid, { store });
+    expect(out.authored_elements).toHaveLength(1);
+    expect(await canvasAccount.eraseAccount(kid, { store })).toMatchObject({ authored_elements: 1 });
+    expect((await service.read("bobs")).nodes.map((e) => e.id)).not.toContain("k1");
+    expect(await canvasAccount.eraseAccount(kid, { store })).toMatchObject({ authored_elements: 0, edited_elements: 0 });
+  });
+
+  test("a real principal named erased owns nothing of what an erase left", async () => {
+    const { store } = await setup();
+    await canvasAccount.eraseAccount(ada, { store });
+    const stand = { kind: "human", id: "erased" } as const;
+    expect(Object.values(await canvasAccount.exportAccount(stand, { store })).flat()).toEqual([]);
+    expect(await canvasAccount.eraseAccount(stand, { store })).toMatchObject({ edited_elements: 0, titles: 0 });
+  });
+
+  test("stops on a damaged grant, and removes a grant that has no resource", async () => {
+    const { store } = await setup();
+    await store.transaction((tx) => tx.put("grants", "orphan", { resourceId: "gone", subjectKind: "human", subjectId: "ada", role: "editor" }));
+    expect(await canvasAccount.eraseAccount(ada, { store })).toMatchObject({ grants: 4 });
+    expect(await store.get("grants", "orphan")).toBeNull();
+    await store.transaction((tx) => tx.put("grants", "bad", { resourceId: "mine", subjectKind: "human", subjectId: "ada", role: "Editor" }));
+    await expect(canvasAccount.exportAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
   });
 });

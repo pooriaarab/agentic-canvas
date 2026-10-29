@@ -4,7 +4,7 @@
 
 **Added**
 
-- `agentic-canvas/account`: `canvasAccount` has `exportAccount(subject, { store, eraseRoom? })` and `eraseAccount(subject, { store, eraseRoom? })`, so a host runs a person's data export and erase without reading the storage layout. The shape is provisional, like the one in the other app packages: it is the `AccountPackage` contract that a later `agentic-identity` release adds.
+- `agentic-canvas/account`: `canvasAccount` has `exportAccount(subject, { store, eraseRoom? })` and `eraseAccount(subject, { store, eraseRoom? })`, so a host runs a person's data export and erase without reading the storage layout. The shape is provisional, as in other agentic packages: it is the `AccountPackage` contract that a later `agentic-identity` release adds.
 
 ## 0.11.0
 
