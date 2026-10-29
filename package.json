@@ -84,7 +84,7 @@
     "agentic-identity": "^0.7.0",
     "agentic-realtime": "^0.4.2",
     "yjs": "^13.6.0",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "playwright-core": ">=1.40.0",
@@ -121,5 +121,8 @@
     "vite": "^7.3.7",
     "vitest": "^3.0.0",
     "wrangler": "^4.155.0"
+  },
+  "overrides": {
+    "zod": "$zod"
   }
 }
