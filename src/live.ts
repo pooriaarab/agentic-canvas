@@ -133,14 +133,16 @@ export class LiveBoard {
     const result = run(this.board, this.me.actor);
     const after = snapshot();
     this.changed = new Set([...before.keys(), ...after.keys()].filter((id) => before.get(id) !== after.get(id)));
-    await this.client.flush();
+    await this.flush();
     if (this.denied.length > seen) throw new CanvasError("FORBIDDEN", `the room refused the edit: ${this.denied[seen]}`);
     return result;
   }
 
   /** Wait until the room has every change made so far. */
   flush(): Promise<void> {
-    return this.client.flush();
+    return this.client.flush().catch((error: unknown) => {
+      throw unreachable(error);
+    });
   }
 
   /**
@@ -149,7 +151,7 @@ export class LiveBoard {
    */
   async save(): Promise<{ elements: number; fixed: string[] }> {
     if (this.me.role === "viewer") throw new CanvasError("FORBIDDEN", "this token is a viewer; it cannot change a board");
-    await this.client.flush();
+    await this.flush();
     const saved = await call(this.options.server, this.options.token, `/boards/${encodeURIComponent(this.id)}/checkpoint`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: this.board.encode() as BodyInit });
     if (!saved.ok) throw await refusal(saved, "the server did not save the board");
     const { elements, fixed } = await json(saved);
@@ -221,12 +223,16 @@ export class LiveService implements BoardAccess {
 
   private write<T>(id: string, change: (board: Board, actor: Principal) => T): Promise<T> {
     return this.use(id, async (live) => {
-      const result = await live.edit(change);
+      // A failed edit may have reached the room, so no caller may repeat it blind.
+      const result = await live.edit(change).catch((error: unknown) => {
+        if (live.touched.size === 0 || !(error instanceof CanvasError && error.code === "UNAVAILABLE")) throw error;
+        throw new CanvasError("UNAVAILABLE", `${error.message}. The room may have the change: read the board before you repeat it.`);
+      });
       const saved = await live.save().catch((error: unknown) => {
         throw new CanvasError(error instanceof CanvasError ? error.code : "UNAVAILABLE", `the room has the change, but it is not saved: ${error instanceof Error ? error.message : String(error)}. Do not repeat the change.`);
       });
       // The checks cover the whole room. Another client's forged element is no failure of this change.
-      if (saved.fixed.some((id) => live.touched.has(id))) throw new CanvasError("FORBIDDEN", "the server undid the change because of its author checks. Do not repeat the change.");
+      if (saved.fixed.some((id) => live.touched.has(id))) throw new CanvasError("FORBIDDEN", "the server undid the change: its checks changed an element this change touched. Do not repeat the change.");
       return result;
     });
   }

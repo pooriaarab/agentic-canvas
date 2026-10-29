@@ -89,6 +89,7 @@ describe("live client", () => {
     one.board.doc.getMap<Y.Map<unknown>>("elements").get("h1")!.set("editedBy", { kind: "human", id: "mallory" });
     await one.flush();
     expect(await agent.move("b1", "a1", 1, 1)).toEqual({ moved: ["a1"] });
+    expect((await human.read("b1")).nodes.find((n) => n.id === "h1")?.editedBy).toEqual({ kind: "human", id: "ada" });
     await Promise.all([one.leave(), two.leave(), eve.leave()]);
     expect((await human.read("b1")).nodes.find((n) => n.id === "a1")).toMatchObject({ machineMade: true });
 
