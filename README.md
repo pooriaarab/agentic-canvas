@@ -391,9 +391,10 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 | `createApp(options?)` | Make the Hono app for the Worker. Pass `live` to turn on the live-room socket. |
 | `default` | The Worker, without live rooms. |
 | `authenticate(request, env)` | Read a bearer token from the `Authorization` header, or from a WebSocket sub-protocol. Return a promise of the actor and the role, or `null`. |
+| `identify(request, env, store?)` | Like `authenticate`, with the whole caller: its actor, role, principal context, and whether the dev fallback signed it in. Return a promise of the caller, or `null`. |
 | `sniffImage(bytes)` | Find the image type from the first bytes, or return `null`. The client's claim of a type is not trusted. |
 | `WS_PROTOCOL` | The sub-protocol name for a WebSocket: `agentic-canvas`. The token travels in the entry `agentic-canvas.bearer.<token in base64url>`. |
-| `WorkerEnv` (type), `AppOptions` (type), `Role` (type) | Types for the Worker bindings, the app options and the role, `editor` or `viewer`. |
+| `WorkerEnv` (type), `AppOptions` (type), `Role` (type), `Caller` (type) | Types for the Worker bindings, the app options, the role, `editor` or `viewer`, and the caller that `identify` returns. |
 
 ### `agentic-canvas/live-worker`
 
@@ -405,7 +406,7 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 
 ## Limits
 
-- Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.6.
+- Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.7.
 - A board made before sharing has no owner. Identity credentials get 404 on it. Only the dev fallback reaches it. Make it again, or add its
   `canvas` resource and an owner grant with `agentic-identity`.
 - An image is stored under the hash of its bytes, not under a board. Any credential with `canvas:read` can fetch an image if it knows the hash.
