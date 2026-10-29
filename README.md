@@ -119,7 +119,7 @@ cd agentic-canvas
 npm install && npm run dev
 ```
 
-`bun install && bun run dev` also works. The `dev` script builds the package, then starts `wrangler dev` on <http://localhost:8793>. Wrangler keeps a local D1 database. It sends no telemetry.
+`bun install && bun run dev` also works if npm is installed too. The scripts need macOS, Linux, or WSL. The `dev` script builds the package, then starts `wrangler dev` on <http://localhost:8793>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
 
 ```sh
 curl -i http://localhost:8793/health   # 200
@@ -127,7 +127,7 @@ curl -i http://localhost:8793/health   # 200
 
 The `dev` script sets `CANVAS_REGION=unknown`, which local Wrangler needs. The API answers 401 until you sign in. For local work, see the dev fallback in "Auth".
 
-`npm run dev:smoke` runs the same check by itself. It starts the dev server. It waits for `/health` to answer 200. It stops the server. CI runs it as the "dev smoke" step. To use another port, change `--port` in the `dev` script.
+`npm run dev:smoke` runs the same check by itself. It starts the dev server. It waits for `/health` to answer 200. It stops the server. CI runs it as the "dev smoke" step. To use another port, change `8793` in the `dev` and `dev:smoke` scripts.
 
 ## Live demo
 

@@ -2,11 +2,12 @@
 // Usage: node scripts/dev-smoke.mjs <port> <health-path> [extra wrangler dev args]
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { constants } from "node:os";
 
 const port = Number(process.argv[2]);
-const path = process.argv[3] ?? "/health";
+const path = process.argv[3];
 const extra = process.argv.slice(4);
-if (!Number.isInteger(port) || port <= 0) {
+if (!Number.isInteger(port) || port <= 0 || !path?.startsWith("/")) {
   console.error("usage: node scripts/dev-smoke.mjs <port> <health-path> [wrangler args]");
   process.exit(2);
 }
@@ -52,7 +53,7 @@ const stop = async () => {
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, async () => {
     await stop();
-    process.exit(130);
+    process.exit(128 + constants.signals[signal]);
   });
 }
 
