@@ -130,6 +130,13 @@ describe("live room", () => {
     new Board(twin).addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "bot text" }, { kind: "human", id: "ada" });
     expect((await save(BOT, twin)).status).toBe(200);
     expect((await (await call("/boards/b1", HUMAN)).json()).nodes.find((n: { id: string }) => n.id === "s4")).toMatchObject({ text: "ada text", machineMade: false });
+    // A hand save under a client id that the room holds for Ada, past her last edit, is refused by the room. It never reaches the Store.
+    const future = new Y.Doc();
+    Y.applyUpdate(future, Y.encodeStateAsUpdate(ada.doc));
+    future.clientID = ada.doc.clientID;
+    new Board(future).addShape({ id: "s5", type: "rect", x: 0, y: 0 }, { kind: "human", id: "ada" });
+    expect((await save(BOT, future)).status).toBe(403);
+    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.some((n: { id: string }) => n.id === "s5")).toBe(false);
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
 
@@ -194,11 +201,9 @@ describe("live room", () => {
   test("a join is refused, not opened empty, when the stored board is too big to seed", async () => {
     worker = await startWorker({ port: PORT + 3, persistTo, vars: OPEN });
     await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b4" }) });
-    // Random text does not compress: 110 elements of 10,000 characters pass the 1,000,000 bytes one seed message may hold.
-    const big = new Board();
+    // Random text does not compress: 110 elements of 10,000 characters pass the 1,000,000 bytes one seed message may hold. HTTP writes have no such cap.
     const random = () => Array.from(crypto.getRandomValues(new Uint8Array(5000)), (v) => v.toString(16).padStart(2, "0")).join("");
-    for (let i = 0; i < 110; i++) big.addShape({ id: `s${i}`, type: "sticky", x: 0, y: 0, text: random() }, { kind: "human", id: "ada" });
-    expect((await call("/boards/b4/checkpoint", HUMAN, { method: "POST", body: big.encode() as BodyInit })).status).toBe(200);
+    for (let i = 0; i < 110; i++) expect((await call("/boards/b4/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: `s${i}`, type: "sticky", x: 0, y: 0, text: random() }) })).status).toBe(201);
     await expect(enter("b4", HUMAN)).rejects.toThrow();
     expect((await call("/boards/b4", HUMAN)).status).toBe(200);
   }, 120_000);

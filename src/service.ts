@@ -144,7 +144,7 @@ export class CanvasService {
   }
 
   /**
-   * `base` is the room's state, merged before `update`. `writer` names who sent each Yjs item, from the room's log. It sets the stamps where it knows (see `Board.restamp`).
+   * `writer` names who sent each Yjs item, from the room's log. It sets the stamps where it knows (see `Board.restamp`).
    * Merge a live room's state into the stored board. `authors` are the principals the room saw send updates. A null
    * `actor` trusts only them: the Worker saves a room that way, with nobody present to vouch.
    * An element stamped by anyone else is deleted, and a changed author is put back (see `Board.restamp`),
@@ -159,7 +159,7 @@ export class CanvasService {
    * stamp written in the same save, or undone if there is none.
    * A client that adds a root type of its own makes every later save of that room fail, because the room keeps it.
    */
-  async checkpoint(id: string, update: Uint8Array, actor: Principal | null, authors: Principal[] = [], writer?: Writer, base?: Uint8Array): Promise<{ elements: number; fixed: string[] }> {
+  async checkpoint(id: string, update: Uint8Array, actor: Principal | null, authors: Principal[] = [], writer?: Writer): Promise<{ elements: number; fixed: string[] }> {
     boardKey(id);
     const by = actor === null ? null : principalSchema.safeParse(actor);
     if (by && !by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
@@ -168,8 +168,6 @@ export class CanvasService {
       const prior = await this.load(tx.get(COLLECTION, id), id);
       const next = prior.clone();
       try {
-        // The room's state comes first. An item of the update that reuses the id of an item of the room is a duplicate then, and Yjs drops it.
-        if (base) Y.applyUpdate(next.doc, base);
         Y.applyUpdate(next.doc, update);
       } catch {
         throw new CanvasError("INVALID", "the update is not a Yjs update");

@@ -57,11 +57,11 @@ async function roomState(live: Realtime, id: string): Promise<Uint8Array | null>
   }
 }
 
-/** Put an update in a room as the seeder, and wait until the room has handled it. */
-async function send(live: Realtime, id: string, update: Uint8Array, roomVector: Uint8Array): Promise<void> {
-  if (update.length > MAX_SEED_BYTES) throw new CanvasError("LIMIT", "the stored board is too big to put in a room");
+/** Put an update in a room as `who`, and wait until the room has handled it. The room's own checks apply to `who`. A refusal fails with `refusal`. */
+async function send(live: Realtime, id: string, update: Uint8Array, roomVector: Uint8Array, who: { principal: Principal; refusal: "UNAVAILABLE" | "FORBIDDEN" }): Promise<void> {
+  if (update.length > MAX_SEED_BYTES) throw new CanvasError("LIMIT", "the update is too big to put in a room");
   const upgrade = new Request("https://room.internal/ws", { headers: { upgrade: "websocket" } });
-  const response = await live.connect(id, upgrade, { principal: SEEDER, role: "editor", name: "canvas" });
+  const response = await live.connect(id, upgrade, { principal: who.principal, role: "editor", name: who.principal.id });
   const socket = (response as Response & { webSocket?: WebSocket & { accept(): void } }).webSocket;
   if (!socket) throw new CanvasError("UNAVAILABLE", "the room did not open");
   socket.accept();
@@ -71,14 +71,14 @@ async function send(live: Realtime, id: string, update: Uint8Array, roomVector: 
     socket.addEventListener("message", ({ data }) => {
       const bytes = new Uint8Array(data as ArrayBuffer);
       // The room answers a state query only after it handled the update before it. Type 2 is auth, and its first body byte 0 means "permission denied".
-      if (bytes[0] === AUTH && bytes[1] === 0) fail(new CanvasError("UNAVAILABLE", "the room refused the stored board"));
+      if (bytes[0] === AUTH && bytes[1] === 0) fail(new CanvasError(who.refusal, "the room refused the update"));
       else if (bytes[0] === SYNC && bytes[1] === SYNC_STEP2) (clearTimeout(timer), resolve());
     });
-    socket.addEventListener("close", () => fail(new CanvasError("UNAVAILABLE", "the room closed while it was seeded")));
+    socket.addEventListener("close", () => fail(new CanvasError("UNAVAILABLE", "the room closed before it took the update")));
     socket.send(new Uint8Array([SYNC, SYNC_UPDATE, ...varUint(update.length), ...update]));
     // The query holds the room's own state vector, so the answer is empty and the room has no big reply to send.
     socket.send(new Uint8Array([SYNC, 0, ...varUint(roomVector.length), ...roomVector]));
-  }).finally(() => socket.close(1000, "seeded"));
+  }).finally(() => socket.close(1000, "done"));
 }
 
 /**
@@ -109,11 +109,12 @@ export async function writers(live: Realtime, id: string): Promise<Writer> {
       if (list[mid]!.clock <= clock) low = mid + 1;
       else high = mid;
     }
-    // Ranges may overlap, where the room replays its stored updates over a saved log. The first claim, the oldest one, is the true sender.
+    // The room logs only structs that were new to it, so ranges do not overlap. If they ever did, the one that starts last would win:
+    // the walk goes back only while an earlier range can still reach the clock.
     let first: (typeof list)[number] | undefined;
-    for (let i = low - 1; i >= 0 && reach.get(client)![i]! > clock; i--) {
+    for (let i = low - 1; i >= 0 && reach.get(client)![i]! > clock && !first; i--) {
       const r = list[i]!;
-      if (clock < r.clock + r.length && (!first || r.at < first.at)) first = r;
+      if (clock < r.clock + r.length) first = r;
     }
     const who = first ? log.authors[first.author] : undefined;
     return who && !same(who, SEEDER) ? { id: who.id, kind: who.kind } : undefined;
@@ -121,18 +122,25 @@ export async function writers(live: Realtime, id: string): Promise<Writer> {
 }
 
 /**
- * A save by hand. The room's state, read once, goes into the board before the posted update, so an item of the update that reuses
- * the id of an item of the room is a duplicate, and Yjs drops it. The log names the sender of each item the room holds, and the poster
- * is the sender of every other item: a client cannot post its own content under the ids that the log names for someone else.
- * A room that fails its checks fails the save.
+ * A save by hand. The part of the posted update that the room lacks goes into the room as the poster, so the room's own checks
+ * apply: it refuses an update under a client id that it holds for someone else, and its log names the poster as the sender. The
+ * part that the room holds is dropped. Then the room is saved as always, and a room that cannot be saved fails the hand save.
  */
 export async function handSave(live: Realtime, service: CanvasService, id: string, update: Uint8Array, poster: Principal): Promise<{ elements: number; fixed: string[] }> {
   const state = await roomState(live, id);
-  // The log is read after the state, so it covers every item of the state.
-  const log = await writers(live, id);
-  const held = state ? Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)) : new Map<number, number>();
-  const writer: Writer = (item) => (item.clock < (held.get(item.client) ?? 0) ? log(item) : poster);
-  return service.checkpoint(id, update, poster, await roomAuthors(live, id), writer, state ?? undefined);
+  const vector = Y.encodeStateVectorFromUpdate(state ?? Y.encodeStateAsUpdate(new Y.Doc()));
+  let missing: Uint8Array;
+  try {
+    missing = Y.diffUpdate(update, vector);
+  } catch {
+    throw new CanvasError("INVALID", "the update is not a Yjs update");
+  }
+  const { structs, ds } = Y.decodeUpdate(missing);
+  if (structs.length > 0 || ds.clients.size > 0) await send(live, id, missing, vector, { principal: poster, refusal: "FORBIDDEN" });
+  const saved = await pull(live, service, id, true);
+  if (saved) return saved;
+  const board = await service.read(id);
+  return { elements: board.nodes.length + board.edges.length + board.groups.length, fixed: [] };
 }
 
 /** The principals the room saw send updates, except the seeder, which is no author. Only these may stamp a save. */
@@ -148,14 +156,15 @@ function remember(id: string, mark: string): void {
   saved.set(id, mark);
 }
 
-/** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. Returns the ids the checks fixed. */
-export async function pull(live: Realtime, service: CanvasService, id: string): Promise<string[]> {
+/** Save the room to the Store. The room's own contributors are the only authors it trusts. A room that has not changed since the last save is skipped. Returns the save, or null when none was needed. `force` saves even when the room has not changed since a save that failed. */
+export async function pull(live: Realtime, service: CanvasService, id: string, force = false): Promise<{ elements: number; fixed: string[] } | null> {
   const { updates, compactions } = await live.meta(id);
   const mark = `${updates}:${compactions}`;
-  if (saved.get(id) === mark) return [];
+  // A save by hand forces a real save: a remembered failure is no save.
+  if (!force && saved.get(id) === mark) return null;
   const state = await roomState(live, id);
-  if (!state) return [];
-  let result: { fixed: string[] };
+  if (!state) return null;
+  let result: { elements: number; fixed: string[] };
   try {
     result = await service.checkpoint(id, state, null, await roomAuthors(live, id), await writers(live, id));
   } catch (error) {
@@ -164,7 +173,7 @@ export async function pull(live: Realtime, service: CanvasService, id: string): 
     throw error;
   }
   remember(id, mark);
-  return result.fixed;
+  return result;
 }
 
 /** Give the room what the Store has and it lacks. A room that is not behind gets nothing. It is read as it is, saved or not. Throws when the room cannot take it. */
@@ -174,5 +183,5 @@ export async function seed(live: Realtime, service: CanvasService, id: string): 
   if (!missing) return;
   const known = new Y.Doc();
   if (state) Y.applyUpdate(known, state);
-  await send(live, id, missing, Y.encodeStateVector(known));
+  await send(live, id, missing, Y.encodeStateVector(known), { principal: SEEDER, refusal: "UNAVAILABLE" });
 }
