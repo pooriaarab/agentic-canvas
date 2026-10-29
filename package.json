@@ -43,6 +43,10 @@
       "types": "./dist/worker.d.ts",
       "import": "./dist/worker.js"
     },
+    "./live": {
+      "types": "./dist/live.d.ts",
+      "import": "./dist/live.js"
+    },
     "./live-worker": {
       "types": "./dist/live-worker.d.ts",
       "import": "./dist/live-worker.js"
