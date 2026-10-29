@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.1 - 2026-10-29
+
+**Changed**
+
+- Depend on `agentic-identity` 0.9 (was 0.8).
+- Depend on `agentic-realtime` 0.4.4 (was 0.4.2). Realtime now depends on `agentic-identity` 0.9 too, so the package has one copy of it.
+
 ## 0.12.0
 
 **Changed**
