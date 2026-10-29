@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import { z } from "zod";
 import { isMachineMade, principalSchema, storedPrincipalSchema, type Principal } from "./principal.js";
@@ -547,7 +546,7 @@ export class Board {
 
   private create(fields: Record<string, unknown> & { id?: string }, actor: Principal): CanvasElement {
     const by = parse(principalSchema, actor);
-    const elementId = fields.id ?? randomUUID();
+    const elementId = fields.id ?? crypto.randomUUID();
     if (this.elements.has(elementId)) throw new CanvasError("DUPLICATE_ID", `element "${elementId}" already exists`);
     if (this.elements.size >= this.maxElements) throw new CanvasError("LIMIT", `a board holds at most ${this.maxElements} elements`);
     const record = { ...fields, id: elementId, z: clampZ(this.edgeZ(1)), author: by, editedBy: by };

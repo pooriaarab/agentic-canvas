@@ -13,5 +13,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "e2e", "tsup.config.ts", "vitest.config.ts", "vite.config.ts"]
+  "include": ["src", "e2e", "tsup.config.ts", "vitest.config.ts", "vite.config.ts"],
+  "exclude": ["e2e/host"]
 }

@@ -16,7 +16,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "../src/client.js";
 import { TOKENS } from "./playwright.config.js";
 
-const API = "http://127.0.0.1:18900/api/v1/canvas";
+const API = `http://127.0.0.1:${process.env.E2E_PORT ?? 18900}/api/v1/canvas`;
 // The committed set in docs/ui is refreshed on purpose (UPDATE_SCREENSHOTS=1). A normal run writes to test-results.
 const shots = (name: string) => `${process.env.UPDATE_SCREENSHOTS ? "docs/ui" : "test-results/screens"}/${name}.png`;
 /** Edits are saved when the page says so. A reload before that would drop the last ones. */
@@ -123,7 +123,14 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
   await page.goto("/#/b/keys");
   await expect(item(page, "Rectangle: First")).toBeVisible();
 
-  await page.keyboard.press("Tab"); // the canvas
+  // Both toolbars come before the canvas, so Tab reaches them before any item.
+  const order = await page.evaluate(() => {
+    const canvas = document.querySelector(".canvas")!;
+    return ["Shape palette", "Zoom and pan"].map((name) => !!(document.querySelector(`[role=toolbar][aria-label="${name}"]`)!.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  expect(order).toEqual([true, true]);
+  // The palette buttons are enabled for an editor, so a keyboard user can use them.
+  await expect(page.getByRole("toolbar", { name: "Shape palette" }).getByRole("button", { name: "Add rectangle" })).toBeEnabled();
   await page.locator(".canvas").focus();
   await page.keyboard.press("Tab");
   await expect(item(page, "Rectangle: First")).toBeFocused();

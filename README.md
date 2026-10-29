@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.10.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.12.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
@@ -110,6 +110,24 @@ There is one method per route: `me`, `listBoards`, `createBoard`, `readBoard`, `
 `CanvasApiError` with the API `code` and the HTTP `status`. A call that gets no reply has code `NETWORK`
 and status 0. The client never retries. A 503 means "try again", and the caller decides, because a
 repeated write can change a board twice. Pass `fetch` to use your own.
+
+## Run locally
+
+```sh
+git clone https://github.com/pooriaarab/agentic-canvas
+cd agentic-canvas
+npm install && npm run dev
+```
+
+You can also use `bun install && bun run dev`. The `dev` script calls npm, so npm must be installed. The scripts need macOS, Linux, or WSL. The `dev` script builds the package, then starts `wrangler dev` on <http://localhost:8793>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
+
+```sh
+curl -i http://localhost:8793/health   # 200
+```
+
+The `dev` script sets `CANVAS_REGION=unknown`, which local Wrangler needs. The API answers 401 until you sign in. For local work, see the dev fallback in "Auth".
+
+`npm run dev:smoke` runs the same check by itself. It starts the dev server. It waits for `/health` to answer 200. It stops the server. CI runs it as the "dev smoke" step. To use another port, change `8793` in the `dev` and `dev:smoke` scripts.
 
 ## Live demo
 
@@ -247,7 +265,7 @@ What it does:
 
 - Lists boards, makes a board, and opens one. Empty, loading, and error states have a retry.
 - Draws shapes, connectors, text, and sticky notes. Select, move, resize, connect, and delete an
-  item. Pan by dragging the background, zoom with the wheel or the toolbar.
+  item. Pan by dragging the background, zoom with the wheel or the zoom controls on the canvas.
 - Marks an item an agent wrote with an "Agent" tag and in its accessible name. The side panel shows
   who made the item and who last edited it.
 - Shows who is in the board, from the live room (`agentic-realtime`). Edits go over the HTTP API.
@@ -290,6 +308,39 @@ server still checks every write against the token. The host page owns the theme.
 For a React app, `BoardEditor` is the same component without a root. Wrap it in the providers of
 `agentic-design/react`.
 
+### Use your own Yjs document
+
+An app that keeps the board in its own Yjs room gives it as `host`. The UI then reads and writes that document as a
+board (its `elements` and `meta` maps, the shape this package stores) and redraws as soon as the document changes.
+It makes no HTTP call, does not poll, and opens no live room. `client` is not needed. The default is still client
+mode: without `host`, the UI works as described above.
+
+```ts
+const board = mount(element, {
+  boardId: "b1",
+  principal: { kind: "human", name: "Ada", id: "ada", role: "editor" }, // id is stamped on what Ada writes; the default is name
+  host: {
+    doc,                       // a Y.Doc
+    presence: sync,            // optional: a SyncClient of agentic-realtime, or { peers, onPeers }
+    status: () => status,      // optional: "connecting" | "connected" | "disconnected"
+    onStatus: (listener) => stop, // optional: tell the UI when the status changes
+  },
+});
+```
+
+- Use the same `yjs` copy as the UI. A document from another copy is refused with a `TypeError`.
+- Each element the UI creates or edits is stamped with the principal's `id` and `kind`. A delete has no stamp. The `id` follows the identity rule of the
+  SDK (letters, digits, `.`, `_`, `-`). An agent kind marks its elements as machine-made. A refused write shows a message
+  and leaves the document alone. The server does not check these writes: your app and its room decide who may write.
+- In host mode `boardId` only keys the view. The UI shows the one board that the document holds (its `elements` and `meta` maps), so keep one board in each document.
+- A document pushed past the element cap (10,000) can no longer be read. If that happens after the first draw, the UI keeps the last board it drew. At mount it shows the error page with Retry. Your app should stop a peer from writing that far.
+- `client` or `room` together with `host` throws a `TypeError`, so a board never half-writes to a server. (`BoardEditor` shows an alert for these, as it does for a bad principal.) Give presence in `host.presence`.
+- The principal's `id` (default: `name`) must pass the identity rule, so a display name with a space needs an explicit `id`. A bad one throws a `TypeError` at mount.
+- The UI redraws only for changes in the document's `elements` and `meta` maps. Other data in the same document is left alone.
+- `status` and `onStatus` are read when the UI opens `doc`. A new function on `update()` does not open it again. `onStatus` alone starts as not live, until it reports "connected". With neither, the board shows as live. Give `onStatus` at mount to follow later changes. It is not picked up by a later `update()` for the same `doc`.
+- With `presence`, the UI shows the peers. It never sends a cursor, and never closes your room or your document.
+- On `unmount` the UI removes its observers from your document and leaves it as it is.
+
 Develop and test the UI:
 
 ```sh
@@ -298,7 +349,7 @@ npx playwright-core install chromium
 npm run test:e2e                   # Playwright against `wrangler dev`, with axe (WCAG 2.2 AA)
 ```
 
-The E2E run creates a board, adds a shape and a note, moves them, reloads, and checks each view
+`E2E_PORT` sets the port of the E2E server (default 18900). The E2E run creates a board, adds a shape and a note, moves them, reloads, and checks each view
 with axe in the light and the dark theme. It saves screenshots to `test-results/screens/`. The committed set in `docs/ui/` shows the UI at this release. Run `UPDATE_SCREENSHOTS=1 npm run test:e2e` to refresh it.
 
 A browser cannot set a header on a WebSocket, so the UI sends its token to the live room as a WebSocket sub-protocol (`Sec-WebSocket-Protocol`). A proxy that logs request headers can record it. The API itself takes the token only in an `Authorization` header, and the sub-protocol only on a WebSocket upgrade.
@@ -415,6 +466,7 @@ old author stays on its elements. Only new writes follow the strict rule.
 | `mount(element, options)` | Render the board UI into an element. It returns `update(options)` and `unmount()`. See Mount the board in your app. |
 | `BoardEditor(options)` | The same board UI as a React component, without a root. |
 | `BoardEditorOptions` (type), `BoardPrincipal` (type), `MountedBoard` (type) | Types for the options, the principal, and the object that `mount` returns. |
+| `HostBoard` (type) | The `host` option: `doc`, and optionally `presence`, `status`, and `onStatus`. |
 | `CanvasClient` (type), `RoomOptions` (type) | The client type, as in `agentic-canvas/client`, and the live room's base URL and token for the `room` option. |
 
 The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-design/styles.css` too, for the tokens.

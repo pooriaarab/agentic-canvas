@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import dagre from "@dagrejs/dagre";
 import * as Y from "yjs";
 import { Board, CanvasError, type ShapeType } from "./board.js";
@@ -145,7 +144,7 @@ export function drawFlow(
   actor: Principal,
   options: DrawOptions = {},
 ): { nodes: string[]; edges: string[] } {
-  const prefix = options.idPrefix ?? `${randomUUID().slice(0, 8)}-`;
+  const prefix = options.idPrefix ?? `${crypto.randomUUID().slice(0, 8)}-`;
   if (!/^[A-Za-z0-9_-]{0,16}$/.test(prefix)) throw new CanvasError("INVALID", "idPrefix must be up to 16 of A-Z, a-z, 0-9, _ and -");
   const graph = parseFlow(source);
   const placed = layoutFlow(graph);

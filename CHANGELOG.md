@@ -1,11 +1,29 @@
 # Changelog
 
-## 0.11.0
+## 0.13.0
 
 **Added**
 
 - Share links on every surface. The client has `links`, `createLink`, and `revokeLink`. The CLI has `links`, `link`, and `revoke-link`. The MCP server has `list_links`, `create_link`, and `revoke_link`. They need `CANVAS_SERVER` and `CANVAS_TOKEN`, as the other sharing commands do.
 - `GET /boards/:id/links` lists the links of a board for an owner. A summary shows the id, role, sign-in option, expiry, and revoke time. It never shows the token. The list holds up to 200 links, and `truncated: true` says there are more, and `skipped` counts damaged records left out. Live links come first.
+
+## 0.12.0
+
+**Changed**
+
+- A calmer board look, with `agentic-design` ^0.5.0 (was ^0.4.0). The shape palette and the zoom controls float on the canvas as two small toolbars. The canvas has a soft dot grid and a large radius. Shapes and connectors have thinner lines. The save status sits under the title. The empty state is centered on the canvas. The look follows Tiny Little Office (https://tinylittleoffice.com, MIT). No code is copied.
+- The toolbar named "Board tools" is now two toolbars: "Shape palette" and "Zoom and pan".
+
+## 0.11.0
+
+**Added**
+
+- `host` option for `agentic-canvas/ui` (`mount`, `BoardEditor`): an app gives its own Yjs document, and optionally the presence and connection state of its room. The UI reads and writes that document as a board, redraws when it changes, and makes no HTTP call, no poll, and no live room. Writes carry the principal's id and kind. `client` is not needed with `host`. A `client` or a `room` with `host`, or a principal id that fails the identity rule, throws a `TypeError`. The default client mode is unchanged.
+- `principal.id` option, the id stamped on each element written in host mode (default: `name`).
+
+**Fixed**
+
+- The board model no longer imports `node:crypto`, so the UI bundles for a browser.
 
 ## 0.10.0
 
