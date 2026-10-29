@@ -360,7 +360,8 @@ old author stays on its elements. Only new writes follow the strict rule.
 | Name | What it is |
 |---|---|
 | `createFileStore(path, options?)`, `openLocalStore(dir)` | A store on one JSON file, or on `canvas.json` in a directory. It is the file store of agentic-identity. |
-| `FileStoreOptions` (type) | The adapter options. |
+| `FileStoreError` | The error for a file that is not a store file. Its `code` is `DAMAGED`. |
+| `FileStoreOptions` (type) | The adapter options. The lock options `lockTimeoutMs` and `staleAfterMs` are gone. |
 | `STORE_FILE` | The file name that `openLocalStore` uses, `canvas.json`. |
 
 ### `agentic-canvas/live`
@@ -431,13 +432,15 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
 - `move` writes absolute positions. Two peers that move one shape at the same time do not add up:
   the last writer wins.
 - Frames are plain shapes. They do not own the shapes inside them yet.
-- The store is one file, `canvas.json`, in the store folder. A write takes `canvas.json.lock`.
-  A lock whose owner is gone, or that is older than 30 seconds, is taken over. A lock that
-  cannot be read counts as held: the call then waits 10 seconds and fails with `UNAVAILABLE`.
-  Remove the lock by hand if no process runs.
+- The store is one file, `canvas.json`, in the store folder. It is the file store of
+  agentic-identity: a write takes `canvas.json.lock`, and a lock older than 3 seconds is taken
+  over, so a writer that is paused for longer can lose its lock and the write then fails with
+  `UNAVAILABLE`. A write that clashes with another process is run again, for up to 10 seconds.
+  Remove the lock by hand if no process runs. A file written by an older agentic-canvas is
+  upgraded in place the first time a store opens it, and an older agentic-canvas cannot read
+  the upgraded file.
 - Node 22 or newer is needed. `agentic-canvas/file-store` exports `createFileStore(path)` and
-  `openLocalStore(dir)`. A writer that is paused for more than 30 seconds can lose its lock
-  and then still write.
+  `openLocalStore(dir)`.
 - A room remembers its authors for good, so a client can stamp an element with the name of anyone who
   once sent an update in that room. A save corrects the stored board and not the room: after a save that
   reports `fixed`, join again. A client that adds a root Yjs type of its own blocks later saves of that room.

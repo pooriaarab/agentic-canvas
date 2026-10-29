@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createFileStore as createIdentityFileStore } from "agentic-identity/file";
 import { StoreConflictError, type AdapterOptions, type Doc, type Store } from "agentic-identity";
@@ -8,51 +9,84 @@ export { FileStoreError };
 
 export interface FileStoreOptions extends AdapterOptions {}
 
-/** The file store of agentic-identity gives up when another process wrote at the same moment. Run the call again. */
-const MAX_RUNS = 50;
+/** The identity file store gives up when another process wrote at the same moment. Run the call again, for a short time. */
+const RETRY_FOR_MS = 10_000;
 
 async function retried<R>(run: () => Promise<R>): Promise<R> {
-  for (let attempt = 1; ; attempt++) {
+  const deadline = Date.now() + RETRY_FOR_MS;
+  for (;;) {
     try {
       return await run();
     } catch (error) {
-      if (!(error instanceof StoreConflictError) || attempt >= MAX_RUNS) throw error;
+      // A lock that stays held already waited in the store. Do not wait again.
+      const clash = error instanceof StoreConflictError && !/locked by another process/.test(error.message);
+      if (!clash || Date.now() > deadline) throw error;
       await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 20));
     }
   }
 }
 
 const isDoc = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const sleep = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** Hold `${path}.lock`, the lock the identity store takes for each write, while `fn` runs. Gives up after 5 seconds. */
+function withLock(path: string, fn: () => void): boolean {
+  const lock = `${path}.lock`;
+  const mine = `${process.pid}:${randomUUID()}`;
+  for (const start = Date.now(); ; ) {
+    try {
+      writeFileSync(lock, mine, { flag: "wx", mode: 0o600 });
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") return false;
+      if (Date.now() - start > 5_000) return false;
+      sleep(10);
+    }
+  }
+  try {
+    fn();
+  } finally {
+    try {
+      if (readFileSync(lock, "utf8") === mine) unlinkSync(lock);
+    } catch {
+      // The lock is already gone.
+    }
+  }
+  return true;
+}
 
 /**
  * Older versions kept `{ collection: { id: doc } }` in the file. The identity store keeps
- * `{ format: 1, collections }`. Rewrite an old file in place by an atomic rename. A file that does not
- * parse is left alone, and the store then reports it as damaged.
+ * `{ format: 1, collections }`. Rewrite an old file in place by an atomic rename, with the write lock held,
+ * so no commit of another process falls between the read and the rename. A file that does not parse is left
+ * alone, and the store then reports it as damaged. A folder that cannot be written is left alone too.
  */
 function upgradeLegacyFile(path: string): void {
-  let seen: string;
-  let before: string;
+  const legacy = (): unknown => {
+    try {
+      const data: unknown = JSON.parse(readFileSync(path, "utf8"));
+      const old = isDoc(data) && !("format" in data) && Object.values(data).every((docs) => isDoc(docs) && Object.values(docs).every(isDoc));
+      return old ? data : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  if (legacy() === undefined) return;
   try {
-    seen = readFileSync(path, "utf8");
-    const stat = statSync(path);
-    before = `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+    withLock(path, () => {
+      const data = legacy();
+      if (data === undefined) return;
+      const temp = `${path}.${process.pid}.upgrade`;
+      try {
+        writeFileSync(temp, JSON.stringify({ format: 1, collections: data }), { mode: 0o600 });
+        renameSync(temp, path);
+      } finally {
+        rmSync(temp, { force: true });
+      }
+    });
   } catch {
-    return;
+    // Leave the file as it is. The store reports what it cannot read.
   }
-  let data: unknown;
-  try {
-    data = JSON.parse(seen);
-  } catch {
-    return;
-  }
-  if (!isDoc(data) || "format" in data) return;
-  if (!Object.values(data).every((docs) => isDoc(docs) && Object.values(docs).every(isDoc))) return;
-  const temp = `${path}.${process.pid}.upgrade`;
-  writeFileSync(temp, JSON.stringify({ format: 1, collections: data }), { mode: 0o600 });
-  // Another process may have upgraded and written since we read. Then the file is no longer ours to replace.
-  const stat = statSync(path, { throwIfNoEntry: false });
-  if (stat && `${stat.ino}:${stat.size}:${stat.mtimeMs}` === before) renameSync(temp, path);
-  else renameSync(temp, `${temp}.discarded`);
 }
 
 /** Give a file that is not a store file the error the CLI and the MCP server report. */
