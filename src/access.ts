@@ -1,6 +1,6 @@
 import { createSharing, EraseRefusedError, hasScope, ROLES, SUBJECT_KINDS, type Action, type Grant, type InviteSummary, type PrincipalContext, type Role, type Store, type Subject } from "agentic-identity";
 import { CanvasError } from "./core/board.js";
-import { isBoardId } from "./service.js";
+import { isBoardId, isStoreId } from "./service.js";
 
 /** The identity resource type of a board. Scopes read `canvas:<action>`. */
 export const RESOURCE_TYPE = "canvas";
@@ -19,9 +19,6 @@ function refuse(error: unknown): never {
   if (error instanceof Error && BAD_INPUT.test(error.message)) throw new CanvasError("INVALID", error.message);
   throw error;
 }
-
-/** The ids of invites and links are UUIDs. Anything else the Store would refuse with a 500. */
-const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const oneOf = <T extends string>(value: unknown, list: readonly T[], name: string): T => {
   if (typeof value !== "string" || !(list as readonly string[]).includes(value)) throw new CanvasError("INVALID", `${name} must be one of: ${list.join(", ")}`);
@@ -136,7 +133,7 @@ export class CanvasAccess {
 
   /** The email comes from a verified sign-in and the handle from the agent's own record, never from the request. */
   async accept(ctx: PrincipalContext, inviteId: string): Promise<{ ok: true }> {
-    if (!SAFE_ID.test(inviteId)) throw new CanvasError("FORBIDDEN", "this invite is not for you, or it is not valid");
+    if (!isStoreId(inviteId)) throw new CanvasError("FORBIDDEN", "you may not do this on this board");
     const user = await this.store.get("users", ctx.principalId);
     const agent = await this.store.get("principals", ctx.principalId);
     const identity = {
@@ -157,7 +154,7 @@ export class CanvasAccess {
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */
   async revokeLink(ctx: PrincipalContext, id: string, linkId: string): Promise<{ ok: true }> {
-    const link = SAFE_ID.test(linkId) ? await this.store.get("links", linkId) : null;
+    const link = isStoreId(linkId) ? await this.store.get("links", linkId) : null;
     if (!link || link.resourceId !== id) throw new CanvasError("NOT_FOUND", "no such link on this board");
     await this.sharing.revokeLink(ctx, linkId).catch(refuse);
     return { ok: true };

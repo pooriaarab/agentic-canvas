@@ -364,8 +364,8 @@ describe("ids the Store would refuse", () => {
     }
   });
 
-  test("a bad link id is 404, and a bad invite id is 403", async () => {
-    expect((await call(tokens.ada!, "DELETE", "/boards/lv/links/a%2Fb")).status).toBe(404);
-    expect((await call(tokens.ada!, "POST", "/invites/accept", { id: "a/b" })).status).toBe(403);
+  test.each(["a/b", "__x__", "a b", "x".repeat(129)])("link id %j is 404, and invite id %j is 403", async (id) => {
+    expect((await call(tokens.ada!, "DELETE", `/boards/lv/links/${encodeURIComponent(id)}`)).status).toBe(404);
+    expect((await call(tokens.ada!, "POST", "/invites/accept", { id })).status).toBe(403);
   });
 });
