@@ -431,7 +431,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   });
   api.get("/boards/:id/svg", async (c) => svgResponse(await c.var.service.exportSvg(c.req.param("id"))));
 
-  // Sharing. Only an owner of the board shares it (the gate above). Links are listed nowhere: a token shows once.
+  // Sharing. Only an owner of the board shares it (the gate above). A link lists without its token: a token shows once.
   api.get("/boards/:id/access", async (c) => c.json(await c.var.access.list(c.var.caller.principal, c.req.param("id"))));
   api.post("/boards/:id/grants", async (c) => {
     const id = c.req.param("id");
@@ -454,6 +454,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json(done);
   });
   api.post("/boards/:id/invites", async (c) => c.json(await c.var.access.invite(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));
+  api.get("/boards/:id/links", async (c) => c.json(await c.var.access.listLinks(c.var.caller.principal, c.req.param("id"))));
   api.post("/boards/:id/links", async (c) => c.json(await c.var.access.createLink(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));
   api.delete("/boards/:id/links/:link", async (c) => c.json(await c.var.access.revokeLink(c.var.caller.principal, c.req.param("id"), c.req.param("link"))));
   // Not tied to a board: the invite names it. The caller must be the person or agent the invite is for.

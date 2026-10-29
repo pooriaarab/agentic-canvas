@@ -35,6 +35,9 @@ Commands:
   grant <board> <human|agent>:<id> --role <viewer|commenter|editor|owner>  Server only. Give a role. Owner.
   revoke <board> <human|agent>:<id>        Server only. Take a role back. Owner.
   invite <board> --role <viewer|commenter|editor> --email <e> | --handle <h> [--expires-in-ms <n>]  Server only. Owner.
+  links <board>                            Server only. List the share links, without tokens. Owner.
+  link <board> --role <viewer|commenter|editor> [--signed-in-only] [--expires-in-ms <n>]  Server only. Make a share link. Prints the token once. Owner.
+  revoke-link <board> <link-id>            Server only. Revoke a share link. Owner.
   mcp                                      Serve these as MCP tools on stdio. Needs CANVAS_ACTOR.
 
 Live mode: set CANVAS_SERVER=<worker url> and CANVAS_TOKEN=<bearer token>. Every command then runs in the live room of
@@ -52,7 +55,7 @@ const flags = {
   type: { type: "string" }, x: { type: "string" }, y: { type: "string" }, w: { type: "string" }, h: { type: "string" },
   text: { type: "string" }, fill: { type: "string" }, stroke: { type: "string" }, src: { type: "string" },
   dx: { type: "string" }, dy: { type: "string" }, file: { type: "string" }, prefix: { type: "string" },
-  format: { type: "string" }, role: { type: "string" }, email: { type: "string" }, handle: { type: "string" }, "expires-in-ms": { type: "string" }, out: { type: "string" }, drop: { type: "string", multiple: true },
+  format: { type: "string" }, role: { type: "string" }, email: { type: "string" }, handle: { type: "string" }, "expires-in-ms": { type: "string" }, "signed-in-only": { type: "boolean" }, out: { type: "string" }, drop: { type: "string", multiple: true },
   help: { type: "boolean" }, version: { type: "boolean" },
 } as const;
 
@@ -181,6 +184,17 @@ async function run(argv: string[]): Promise<void> {
       const expiresInMs = num(v["expires-in-ms"]);
       return print(await sharing().invite(board, { role: v.role as never, email: v.email, handle: v.handle, ...(expiresInMs === undefined ? {} : { expiresInMs }) }));
     }
+    case "links":
+      need(1, "<board>");
+      return print(await sharing().links(board));
+    case "link": {
+      need(1, "<board> --role <role> [--signed-in-only] [--expires-in-ms <n>]");
+      const expiresInMs = num(v["expires-in-ms"]);
+      return print(await sharing().createLink(board, { role: v.role as never, ...(v["signed-in-only"] ? { signedInOnly: true } : {}), ...(expiresInMs === undefined ? {} : { expiresInMs }) }));
+    }
+    case "revoke-link":
+      need(2, "<board> <link-id>");
+      return print(await sharing().revokeLink(board, rest[0]));
     case "mcp":
       need(0, "");
       return runMcp(service, actor(), server ? sharing() : undefined);

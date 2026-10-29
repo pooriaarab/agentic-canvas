@@ -9,6 +9,8 @@
 //  5. The MCP server with no server: a sharing tool must fail with UNAVAILABLE and keep running.
 //  6. A path that holds a slash or a space in the board id is not escaped, and reaches another route.
 //  7. A token or an email leaks into an error or a list.
+//  8. A link list shows a token or its hash, or a link of another board, or a non-owner lists, makes, or revokes links.
+//  9. A revoked link still opens the board, or a link of board A is revoked through board B.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { issueCredential, type Store } from "agentic-identity";
@@ -99,6 +101,81 @@ describe("the typed client", () => {
     expect(after.grants.filter((g) => g.subjectId === "bob").map((g) => g.subjectKind)).toEqual(["agent"]);
   });
 
+  test("makes, lists, and revokes links on one board, and a revoked link stops working", async () => {
+    const ada = client("ada");
+    await ada.createBoard({ id: "l-board" });
+    await ada.createBoard({ id: "l-other" });
+    const link = await ada.createLink("l-board", { role: "viewer", signedInOnly: true, expiresInMs: 60_000 });
+    const plain = await ada.createLink("l-board", { role: "commenter" });
+    await ada.createLink("l-other", { role: "viewer" });
+    expect(link.token.length).toBeGreaterThan(30);
+    const { links } = await ada.links("l-board");
+    expect(links.map((l) => [l.id, l.role, l.signedInOnly]).sort()).toEqual([[link.id, "viewer", true], [plain.id, "commenter", false]].sort());
+    expect(links.find((l) => l.id === link.id)!.expiresAt).toBeGreaterThan(Date.now());
+    expect(JSON.stringify(links)).not.toMatch(new RegExp(`${link.token}|tokenHash`));
+    const open = (token: string) => fetch(`${server}/api/v1/canvas/shared/l-board`, { headers: { "x-link-token": token, authorization: `Bearer ${tokens.bob}` } });
+    expect((await open(plain.token)).status).toBe(200);
+    expect(await failure(ada.revokeLink("l-other", plain.id))).toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(await ada.revokeLink("l-board", plain.id)).toEqual({ ok: true });
+    expect((await open(plain.token)).status).toBe(404);
+    expect((await ada.links("l-board")).links.find((l) => l.id === plain.id)!.revokedAt).toBeGreaterThan(0);
+    expect((await ada.links("l-other")).links).toHaveLength(1);
+  });
+
+  test("a list of more than 200 links says it was cut", async () => {
+    const ada = client("ada");
+    await ada.createBoard({ id: "l-many" });
+    // Write the records straight to the store: 201 calls over HTTP are slow.
+    await store.transaction(async (tx) => {
+      for (let i = 0; i < 201; i++) await tx.put("links", `many-${i}`, { id: `many-${i}`, resourceId: "l-many", role: "viewer", tokenHash: "x", signedInOnly: false });
+    });
+    const list = await ada.links("l-many");
+    expect([list.links.length, list.truncated]).toEqual([200, true]);
+    // Live links come before revoked ones, so a cut keeps the ones that matter.
+    const live = await ada.createLink("l-many", { role: "viewer" });
+    await ada.revokeLink("l-many", "many-0");
+    expect((await ada.links("l-many")).links.some((l) => l.id === live.id)).toBe(true);
+    await store.transaction((tx) => tx.put("links", "odd", { id: "odd", resourceId: "l-odd", role: "owner", tokenHash: "x" }));
+    await ada.createBoard({ id: "l-odd" });
+    expect(await ada.links("l-odd")).toEqual({ links: [], skipped: 1 });
+    // A damaged record fails closed: a bad revokedAt shows as revoked, and a bad expiresAt, a wrong key, or a wrong board is not shown.
+    await store.transaction(async (tx) => {
+      await tx.put("links", "bad-revoked", { id: "bad-revoked", resourceId: "l-odd", role: "viewer", tokenHash: "x", revokedAt: true });
+      await tx.put("links", "bad-expiry", { id: "bad-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: "soon" });
+      await tx.put("links", "null-expiry", { id: "null-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: null });
+      await tx.put("links", "no-hash", { id: "no-hash", resourceId: "l-odd", role: "viewer" });
+      await tx.put("links", "key-a", { id: "key-b", resourceId: "l-odd", role: "viewer", tokenHash: "x" });
+    });
+    const odd = await ada.links("l-odd");
+    expect(odd.links.map((l) => l.id).sort()).toEqual(["bad-revoked", "null-expiry"]);
+    expect(odd.links.find((l) => l.id === "null-expiry")).toEqual({ id: "null-expiry", role: "viewer", signedInOnly: false });
+    expect(odd.skipped).toBe(4);
+    expect(odd.links.find((l) => l.id === "bad-revoked")!.revokedAt).toBe(0);
+    expect((await ada.links("l-board")).truncated).toBeUndefined();
+  });
+
+  test("a list reads at most 1000 records and says it was cut", async () => {
+    await client("ada").createBoard({ id: "l-huge" });
+    await store.transaction(async (tx) => {
+      for (let i = 0; i < 1001; i++) await tx.put("links", `huge-${i}`, { id: `huge-${i}`, resourceId: "l-huge", role: "viewer", tokenHash: "x", revokedAt: 1 });
+    });
+    const list = await client("ada").links("l-huge");
+    expect([list.links.length, list.truncated]).toEqual([200, true]);
+  });
+
+  test("a non-owner and a stranger cannot use links, and bad input has a code", async () => {
+    const ada = client("ada");
+    await ada.createBoard({ id: "l-guard" });
+    await ada.grant("l-guard", { subjectKind: "human", subjectId: "bob", role: "editor" });
+    const link = await ada.createLink("l-guard", { role: "viewer" });
+    expect(await failure(client("bob").links("l-guard"))).toMatchObject({ code: "FORBIDDEN", status: 403 });
+    expect(await failure(client("bob").createLink("l-guard", { role: "viewer" }))).toMatchObject({ code: "FORBIDDEN" });
+    expect(await failure(client("bob").revokeLink("l-guard", link.id))).toMatchObject({ code: "FORBIDDEN" });
+    expect(await failure(client("bot").links("l-guard"))).toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(await failure(ada.createLink("l-guard", { role: "owner" as never }))).toMatchObject({ code: "INVALID" });
+    expect(await failure(ada.revokeLink("l-guard", "nope"))).toMatchObject({ code: "NOT_FOUND" });
+  });
+
   test("shows the server's code for a non-owner, a stranger, and bad input", async () => {
     const ada = client("ada");
     await ada.createBoard({ id: "c-guard" });
@@ -146,7 +223,24 @@ describe("the CLI", () => {
     expect([both.code, both.err.startsWith("INVALID:")]).toEqual([1, true]);
   });
 
-  test.each(["access x", "grant x human:bob --role viewer", "revoke x human:bob", "invite x --role viewer --email a@example.com"])("`%s` with no server exits 2 and says it needs a server", async (line) => {
+  test("makes, lists, and revokes links, and prints JSON", async () => {
+    await client("ada").createBoard({ id: "cli-link" });
+    const made = await cli(["link", "cli-link", "--role", "viewer", "--signed-in-only", "--expires-in-ms", "60000"], "ada");
+    expect(made.code).toBe(0);
+    const link = JSON.parse(made.out) as { id: string; token: string };
+    const list = JSON.parse((await cli(["links", "cli-link"], "ada")).out);
+    expect(list.links).toEqual([{ id: link.id, role: "viewer", signedInOnly: true, expiresAt: expect.any(Number) }]);
+    expect((await cli(["links", "cli-link"], "ada")).out).not.toContain(link.token);
+    expect(JSON.parse((await cli(["revoke-link", "cli-link", link.id], "ada")).out)).toEqual({ ok: true });
+    expect(JSON.parse((await cli(["links", "cli-link"], "ada")).out).links[0].revokedAt).toEqual(expect.any(Number));
+    const denied = await cli(["links", "cli-link"], "bot");
+    expect([denied.code, denied.err]).toEqual([1, expect.stringContaining("NOT_FOUND")]);
+    const bad = await cli(["link", "cli-link", "--role", "owner"], "ada");
+    expect([bad.code, bad.err]).toEqual([1, expect.stringContaining("INVALID")]);
+    expect((await cli(["revoke-link", "cli-link"], "ada")).code).toBe(2);
+  });
+
+  test.each(["links x", "link x --role viewer", "revoke-link x abc", "access x", "grant x human:bob --role viewer", "revoke x human:bob", "invite x --role viewer --email a@example.com"])("`%s` with no server exits 2 and says it needs a server", async (line) => {
     const r = await cli(["--dir", join(scratch, "local"), ...line.split(" ")], null, { CANVAS_ACTOR: "human:ada" });
     expect([r.code, r.out, r.err]).toEqual([2, "", expect.stringContaining("needs a server")]);
   });
@@ -186,6 +280,28 @@ describe("the MCP server", () => {
     }
   });
 
+  test("makes, lists, and revokes links through tools", async () => {
+    await client("ada").createBoard({ id: "mcp-link" });
+    const c = await connect({ CANVAS_SERVER: server, CANVAS_TOKEN: tokens.ada! });
+    try {
+      const made = await call(c, "create_link", { board: "mcp-link", role: "viewer", expiresInMs: 60_000 });
+      expect([made.error, typeof made.value.token]).toEqual([false, "string"]);
+      const list = await call(c, "list_links", { board: "mcp-link" });
+      expect(list.value.links.map((l: { id: string }) => l.id)).toEqual([made.value.id]);
+      expect(JSON.stringify(list.value)).not.toContain(made.value.token);
+      expect((await call(c, "revoke_link", { board: "mcp-link", link: made.value.id })).value).toEqual({ ok: true });
+      expect((await call(c, "list_links", { board: "mcp-link" })).value.links[0].revokedAt).toEqual(expect.any(Number));
+      const missing = await call(c, "revoke_link", { board: "mcp-link", link: "nope" });
+      expect([missing.error, missing.value.code]).toEqual([true, "NOT_FOUND"]);
+      for (const args of [{ role: "owner" }, { role: "viewer", expiresInMs: 1.5 }, { role: "viewer", expiresInMs: -1 }]) {
+        const bad = (await c.callTool({ name: "create_link", arguments: { board: "mcp-link", ...args } })) as { isError?: boolean };
+        expect(bad.isError).toBe(true);
+      }
+    } finally {
+      await c.close();
+    }
+  });
+
   test("a non-owner's tool call is an error with the server's code, and a bad role is refused by the schema", async () => {
     await client("ada").createBoard({ id: "mcp-guard" });
     const c = await connect({ CANVAS_SERVER: server, CANVAS_TOKEN: tokens.bob! });
@@ -204,6 +320,7 @@ describe("the MCP server", () => {
     try {
       const r = await call(c, "list_access", { board: "x" });
       expect([r.error, r.value.code]).toEqual([true, "UNAVAILABLE"]);
+      expect((await call(c, "list_links", { board: "x" })).value.code).toBe("UNAVAILABLE");
       expect((await call(c, "list_boards", {})).value).toEqual({ boards: [] });
     } finally {
       await c.close();

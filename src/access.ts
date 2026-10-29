@@ -7,6 +7,15 @@ export const RESOURCE_TYPE = "canvas";
 export { ROLES, SUBJECT_KINDS };
 export type { Grant, InviteSummary, Role, Subject };
 
+/** A share link without its token. `revokedAt` is set once the link is revoked. */
+export interface LinkSummary {
+  id: string;
+  role: Exclude<Role, "owner">;
+  signedInOnly: boolean;
+  expiresAt?: number;
+  revokedAt?: number;
+}
+
 /** The roles an invite or a link may give. Only a grant makes an owner. */
 const SHARE_ROLES = ROLES.filter((r) => r !== "owner");
 
@@ -128,7 +137,7 @@ export class CanvasAccess {
     return { ok: true };
   }
 
-  /** The grants and the invites on a board. An invite never shows its email. Links are not listed: a token shows once. */
+  /** The grants and the invites on a board. An invite never shows its email. `listLinks` lists the links, and never a token. */
   async list(ctx: PrincipalContext, id: string): Promise<{ grants: Grant[]; invites: InviteSummary[] }> {
     this.known(id);
     const [grants, invites] = await Promise.all([this.sharing.listGrants(ctx, id, { limit: 200 }), this.sharing.listInvites(ctx, id, { limit: 200 })]).catch(refuse);
@@ -164,6 +173,43 @@ export class CanvasAccess {
     const expiresInMs = lifetime(input.expiresInMs, "expiresInMs");
     if (input.signedInOnly !== undefined && typeof input.signedInOnly !== "boolean") throw new CanvasError("INVALID", "signedInOnly must be true or false");
     return this.sharing.createLink(ctx, id, { role, signedInOnly: input.signedInOnly === true, ...(expiresInMs === undefined ? {} : { expiresAt: this.now() + expiresInMs }) }).catch(refuse);
+  }
+
+  /** The links of a board. A summary never holds the token or its hash. Needs an owner. */
+  async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[]; truncated?: true; skipped?: number }> {
+    this.known(id);
+    await this.require(ctx, "admin", id);
+    // Read up to 1000 records, then show live links first: an owner who looks for a leaked link finds it before old revoked ones.
+    const all: LinkSummary[] = [];
+    let cursor: string | undefined;
+    let skipped = 0;
+    for (let pages = 0; pages < 10; pages++) {
+      const page = await this.store.query("links", { where: { resourceId: id }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
+      for (const { id: key, data } of page.items) {
+        // A record that is not a share link of this board is not shown. The list says it is not complete.
+        // A null `expiresAt` is no expiry, as in agentic-identity. Any other value that is not a time is a dead link there, so it is not shown as one that never ends.
+        const expiresOk = data.expiresAt == null || (typeof data.expiresAt === "number" && Number.isFinite(data.expiresAt));
+        if (data.id !== key || data.resourceId !== id || typeof data.tokenHash !== "string" || typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role) || !expiresOk) {
+          skipped++;
+          continue;
+        }
+        all.push({
+          id: data.id,
+          role: data.role as LinkSummary["role"],
+          signedInOnly: data.signedInOnly === true,
+          ...(typeof data.expiresAt === "number" ? { expiresAt: data.expiresAt } : {}),
+          // Any value but null means revoked, as in agentic-identity. A value that is not a time shows as 0.
+          ...(data.revokedAt == null ? {} : { revokedAt: typeof data.revokedAt === "number" ? data.revokedAt : 0 }),
+        });
+      }
+      if ((cursor = page.nextCursor) === undefined) break;
+    }
+    const now = this.now();
+    const live = (l: LinkSummary) => l.revokedAt === undefined && (l.expiresAt === undefined || l.expiresAt > now);
+    all.sort((x, y) => Number(live(y)) - Number(live(x)) || (y.expiresAt ?? Infinity) - (x.expiresAt ?? Infinity) || x.id.localeCompare(y.id));
+    const links = all.slice(0, 200);
+    // A cut list says so: an owner who looks for a leaked link must know it may be missing. `skipped` counts the damaged records left out.
+    return { links, ...(cursor !== undefined || all.length > 200 ? { truncated: true as const } : {}), ...(skipped > 0 ? { skipped } : {}) };
   }
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */

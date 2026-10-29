@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0
+
+**Added**
+
+- Share links on every surface. The client has `links`, `createLink`, and `revokeLink`. The CLI has `links`, `link`, and `revoke-link`. The MCP server has `list_links`, `create_link`, and `revoke_link`. They need `CANVAS_SERVER` and `CANVAS_TOKEN`, as the other sharing commands do.
+- `GET /boards/:id/links` lists the links of a board for an owner. A summary shows the id, role, sign-in option, expiry, and revoke time. It never shows the token. The list holds up to 200 links, with live links first. `truncated: true` says there are more. `skipped` counts damaged records left out.
+
 ## 0.13.0
 
 **Added**
