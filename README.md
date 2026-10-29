@@ -141,9 +141,10 @@ the direction. Lines that start with `#` or `//` are comments.
   `openLocalStore(dir)`. A writer that is paused for more than 30 seconds can lose its lock
   and then still write.
 - Every Worker token reaches every board. There are no roles or sharing yet. Local
-  `wrangler dev` cannot confirm a region, so run it with `CANVAS_REGION=unknown`. A real D1
+  `wrangler dev` cannot confirm a region, so run it with `CANVAS_REGION=unknown`. The region claim covers D1 only: R2 reports no region, so the bucket is in
+  the EU jurisdiction only if you create it so. A real D1
   confirms `eu` or `us` on each query. The Worker has no PNG export.
-- Delete leaves no audit record yet. The caller logs it.
+- Delete leaves no audit record yet. The Worker logs the actor kind of each delete, and no ids.
 - PNG needs the optional `playwright-core` and a Chromium. Without them it fails with
   `UNAVAILABLE`. SVG always works.
 

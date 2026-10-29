@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
+import worker from "./worker.js";
 import { startWorker, type RunningWorker } from "./wrangler-harness.js";
 
 const A = 18810;
@@ -121,6 +122,16 @@ describe("two Workers on one D1 database and one R2 bucket", () => {
     const [w] = (running = [await startWorker({ port: A, persistTo, vars: OPEN })]);
     expect((await call(w, "POST", "/images", { body: new TextEncoder().encode("<svg onload=alert(1)>") })).status).toBe(415);
     expect((await call(w, "POST", "/images", { body: new Uint8Array(3000).fill(1) })).status).toBe(413);
+    // A chunked upload has no content-length, and it is still stopped at the limit.
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 5) controller.enqueue(new Uint8Array(1000).fill(1));
+        else controller.close();
+      },
+    });
+    const chunked = await fetch(`${w.url}/images`, { method: "POST", headers: { authorization: `Bearer ${HUMAN}` }, body: stream, duplex: "half", signal: AbortSignal.timeout(30_000) } as RequestInit);
+    expect(chunked.status).toBe(413);
     expect((await call(w, "GET", "/images/..%2f..%2fx")).status).toBe(404);
     expect((await call(w, "GET", "/images/" + "0".repeat(64))).status).toBe(404);
     expect((await call(w, "GET", "/boards/__x__")).status).toBe(422);
@@ -136,6 +147,21 @@ describe("two Workers on one D1 database and one R2 bucket", () => {
     // Local D1 does not say where it runs, so a claim of "eu" cannot be confirmed. The adapter refuses, and so does the Worker.
     const [claim] = (running = [await startWorker({ port: A, persistTo, vars: OPEN.filter((v) => !v.startsWith("CANVAS_REGION")).concat("CANVAS_REGION:eu") })]);
     expect((await call(claim, "GET", "/boards/b1")).status).toBe(500);
-    expect(claim.log()).not.toContain("b1");
+    // Wrangler writes the line a moment later. Only the Worker's own JSON lines count, and they hold no id.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const own = claim.log().split("\n").filter((line) => line.includes('"level"'));
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.join("\n")).not.toContain("b1");
   }, 240_000);
+});
+
+// The handler itself, with the environment a bad deploy would give it.
+describe.each([
+  ["no database", { IMAGES: {}, CANVAS_REGION: "eu", CANVAS_API_TOKENS: tokens }],
+  ["no bucket", { DB: {}, CANVAS_REGION: "eu", CANVAS_API_TOKENS: tokens }],
+])("a Worker with %s", (_name, env) => {
+  test("answers 503 and touches nothing", async () => {
+    const res = await worker.fetch(new Request("http://x/api/v1/canvas/boards/b1", { headers: { authorization: `Bearer ${HUMAN}` } }), env as never, undefined);
+    expect(res.status).toBe(503);
+  });
 });

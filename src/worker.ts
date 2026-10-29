@@ -93,9 +93,31 @@ async function ready(db: D1Like): Promise<void> {
   await run;
 }
 
+/** Read a body, and stop as soon as it passes `max` bytes. Returns null for a body that is too big. */
+async function readLimited(request: Request, max: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) bytes.set(chunk, (at += chunk.byteLength) - chunk.byteLength);
+  return bytes;
+}
+
 async function jsonBody(c: Context<App>): Promise<Record<string, unknown>> {
-  const bytes = new Uint8Array(await c.req.arrayBuffer());
-  if (bytes.byteLength > MAX_JSON_BYTES) throw new CanvasError("INVALID", `the body must be at most ${MAX_JSON_BYTES} bytes`);
+  const bytes = await readLimited(c.req.raw, MAX_JSON_BYTES);
+  if (!bytes) throw new CanvasError("INVALID", `the body must be at most ${MAX_JSON_BYTES} bytes`);
   let body: unknown;
   try {
     body = bytes.byteLength === 0 ? {} : JSON.parse(new TextDecoder().decode(bytes));
@@ -120,6 +142,8 @@ const num = (value: unknown, name: string): number => {
  * input, such as an id, so only the error type is written.
  */
 const LOGGABLE = /^(D1_ERROR[^"]{0,150}|transaction kept conflicting)/;
+/** Failures of D1 and R2 that pass by themselves. Any other failure is a bug or a bad setup: it is a 500, not a reason to retry. */
+const TEMPORARY = /commit token|busy|locked|reset|overloaded|time ?out|timed out|temporar|unspecified error|network/i;
 const loggable = (error: unknown): string => (error instanceof Error ? (LOGGABLE.exec(error.message)?.[0] ?? error.name) : "unknown");
 
 export function createApp(): Hono<App> {
@@ -161,7 +185,12 @@ export function createApp(): Hono<App> {
     const b = await jsonBody(c);
     return c.json(await c.var.service.move(c.req.param("id"), text(b.element, "element"), num(b.dx, "dx"), num(b.dy, "dy"), c.var.actor));
   });
-  api.delete("/boards/:id/elements/:element", async (c) => c.json(await c.var.service.remove(c.req.param("id"), c.req.param("element"))));
+  api.delete("/boards/:id/elements/:element", async (c) => {
+    const removed = await c.var.service.remove(c.req.param("id"), c.req.param("element"));
+    // The board keeps no record of a delete, so the Worker logs who did it. Only the kind: ids and names stay out of logs.
+    console.log(JSON.stringify({ level: "info", op: "remove", actorKind: c.var.actor.kind }));
+    return c.json(removed);
+  });
 
   // An image is stored under the SHA-256 of its bytes. The same bytes make the same ref, and a second upload changes nothing.
   api.post("/images", async (c) => {
@@ -169,8 +198,8 @@ export function createApp(): Hono<App> {
     if (!Number.isFinite(max) || max < 0) return fail("NOT_CONFIGURED", "CANVAS_MAX_IMAGE_BYTES must be a number of 0 or more", 503);
     const declared = Number(c.req.header("content-length"));
     if (Number.isFinite(declared) && declared > max) return fail("TOO_LARGE", `the image is over the limit of ${max} bytes`, 413);
-    const bytes = new Uint8Array(await c.req.arrayBuffer());
-    if (bytes.byteLength > max) return fail("TOO_LARGE", `the image is over the limit of ${max} bytes`, 413);
+    const bytes = await readLimited(c.req.raw, max);
+    if (!bytes) return fail("TOO_LARGE", `the image is over the limit of ${max} bytes`, 413);
     const type = sniffImage(bytes);
     if (!type) return fail("UNSUPPORTED_TYPE", "the image must be PNG, JPEG, GIF, or WebP", 415);
     const id = hex(await crypto.subtle.digest("SHA-256", bytes));
@@ -178,9 +207,10 @@ export function createApp(): Hono<App> {
     try {
       stored = await c.var.blobs.put(id, bytes, { contentType: type, ifNoneMatch: "*" });
     } catch (error) {
-      // The bucket may fail for a moment, for example when two writes race. Nothing was stored, so the caller may try again.
       console.error(JSON.stringify({ level: "error", message: loggable(error) }));
-      return fail("UNAVAILABLE", "the image store is busy. Try again", 503);
+      // The bucket may fail for a moment, for example when two writes race. Nothing was stored, so the caller may try again.
+      if (error instanceof Error && TEMPORARY.test(error.message)) return fail("UNAVAILABLE", "the image store is busy. Try again", 503);
+      throw error;
     }
     return c.json({ id, ref: `blob:${id}`, type, size: bytes.byteLength, created: stored !== null }, stored ? 201 : 200);
   });
@@ -188,16 +218,17 @@ export function createApp(): Hono<App> {
     const id = c.req.param("id");
     const blob = IMAGE_ID.test(id) ? await c.var.blobs.get(id) : null;
     if (!blob) return fail("NOT_FOUND", "no such image", 404);
-    return new Response(blob.data as BodyInit, { headers: { "content-type": blob.contentType ?? "application/octet-stream", "x-content-type-options": "nosniff", "content-disposition": "attachment", "cache-control": "private, no-store" } });
+    return new Response(blob.data as BodyInit, { headers: { "content-type": blob.contentType ?? "application/octet-stream", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "content-disposition": "attachment", "cache-control": "private, no-store" } });
   });
 
   app.route("/api/v1/canvas", api);
   app.notFound(() => fail("NOT_FOUND", "no such route", 404));
   app.onError((error) => {
-    // D1 reports a busy or restarting database as D1_ERROR. The caller may try again.
     if (error instanceof Error && error.message.startsWith("D1_ERROR")) {
       console.error(JSON.stringify({ level: "error", message: loggable(error) }));
-      return fail("UNAVAILABLE", "the database is busy. Try again", 503);
+      // A value over the D1 limit never succeeds, so it is no reason to try again.
+      if (/too big|too large/i.test(error.message)) return fail("LIMIT", "the board is too big to store", 422);
+      if (TEMPORARY.test(error.message)) return fail("UNAVAILABLE", "the database is busy. Try again", 503);
     }
     if (error instanceof CanvasError) return fail(error.code, error.message, STATUS[error.code]);
     console.error(JSON.stringify({ level: "error", message: loggable(error) }));
