@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+**Added**
+
+- Sharing on every surface. The client has `access`, `grant`, `revoke`, and `invite`. The CLI has `access`, `grant`, `revoke`, and `invite`. The MCP server has `list_access`, `grant_access`, `revoke_access`, and `create_invite`. They call the HTTP API as the owner of the token, so they need `CANVAS_SERVER` and `CANVAS_TOKEN`. A local store has no owners: the CLI commands exit 2 there, and the tools fail with `UNAVAILABLE`.
+- `parseSubject` and the sharing types in `agentic-canvas/client`.
+- The CLI and MCP server show a `CanvasApiError` with the server's code.
+
+**Changed**
+
+- Depend on `agentic-identity` 0.8 (was 0.7).
+
 ## 0.9.0
 
 **Breaking changes**
