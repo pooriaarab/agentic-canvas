@@ -11,7 +11,7 @@ import { fromBase64, isBoardId, toBase64 } from "./service.js";
 export interface CanvasAccountDeps {
   /** The Store that holds the boards and the sharing records. */
   store: Store;
-  /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. A board with no room needs no work. Omit it when no room runs. */
+  /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. The call runs for every stored board, so it must be cheap for a board with no room. A board with no room needs no work. Omit it when no room runs. */
   saveRoom?: (boardId: string) => Promise<void>;
   /** Erases the live room of a board, so it opens again from the Store. The erase calls it for every board that it changes or deletes. Omit it when no room runs. */
   eraseRoom?: (boardId: string) => Promise<void>;

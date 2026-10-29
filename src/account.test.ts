@@ -1,7 +1,7 @@
 // Account export and erase, over the real file store and the real sharing records. No mock.
 //
 // Failure cases, written before the code:
-//  1. A bad subject (no kind, a kind with no roles, a bad id) or a missing store is refused.
+//  1. A bad subject (no kind, an unknown kind, an empty id) or a missing store is refused.
 //  2. A board with two owners is deleted when one is erased, or a board that the subject owns alone is left.
 //  3. An element of the subject stays on a board of someone else, or an element of someone else goes with it.
 //  4. A connector of someone else is left hidden on a deleted shape, or a member of a deleted group is lost.
