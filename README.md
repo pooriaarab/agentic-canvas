@@ -183,7 +183,7 @@ Roles, from least to most: `viewer`, `commenter`, `editor`, `owner`.
 |---|---|
 | viewer, commenter | Read the board, its SVG, and join its live room to read. A board has no comments yet, so a commenter reads as a viewer. |
 | editor | Also draw: add, update, move, and remove elements. |
-| owner | Also delete the board, grant and revoke roles, list access, invite, and make or revoke share links. |
+| owner | Also delete the board, grant and revoke roles, list access, invite, and list, make, or revoke share links. |
 
 A role never exceeds the scopes of the credential. An agent of an owner holds the owner's role only inside its own
 scopes: it needs `canvas:admin` to share, and `canvas:write` to draw. A caller with no role on a board gets 404, so a read or a write tells a stranger nothing. (A create with an id that is taken answers 409.) A caller with a role that is too low gets 403. `GET /boards` lists the boards you hold a role on.
@@ -468,7 +468,7 @@ old author stays on its elements. Only new writes follow the strict rule.
 |---|---|
 | `createClient(options)`, `CanvasApiError` | The remote client. See Remote client above. |
 | `parseSubject(text)` | Reads `human:<id>` or `agent:<id>` as `{ subjectKind, subjectId }`. It throws a `TypeError` for any other text. |
-| `BoardSharing` (type), `BoardRole` (type), `SubjectKind` (type), `Subject` (type), `BoardGrant` (type), `BoardInvite` (type), `InviteInput` (type) | Types for sharing. |
+| `BoardSharing` (type), `BoardRole` (type), `SubjectKind` (type), `Subject` (type), `BoardGrant` (type), `BoardInvite` (type), `InviteInput` (type), `BoardLink` (type), `LinkInput` (type) | Types for sharing. |
 | `ClientOptions` (type), `CallOptions` (type), `CanvasClient` (type), `ShapeInput` (type), `ConnectorInput` (type), `ShapePatch` (type), `ConnectorPatch` (type), `ImageInfo` (type), `ApiErrorCode` (type) | Types for the client. `ApiErrorCode` adds the client's own codes, such as `NETWORK`, to `ErrorCode`. |
 
 ### `agentic-canvas/file-store`
