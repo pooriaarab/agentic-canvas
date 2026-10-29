@@ -162,4 +162,16 @@ describe("live room", () => {
     const late = await enter("b3", HUMAN);
     await until(() => new Board(late.doc).get("rest1") !== undefined, "the room to take the HTTP change");
   }, 120_000);
+
+  test("a join is refused, not opened empty, when the stored board is too big to seed", async () => {
+    worker = await startWorker({ port: PORT + 3, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b4" }) });
+    // Random text does not compress: 110 elements of 10,000 characters pass the 1,000,000 bytes one seed message may hold.
+    const big = new Board();
+    const random = () => Array.from(crypto.getRandomValues(new Uint8Array(5000)), (v) => v.toString(16).padStart(2, "0")).join("");
+    for (let i = 0; i < 110; i++) big.addShape({ id: `s${i}`, type: "sticky", x: 0, y: 0, text: random() }, { kind: "human", id: "ada" });
+    expect((await call("/boards/b4/checkpoint", HUMAN, { method: "POST", body: big.encode() as BodyInit })).status).toBe(200);
+    await expect(enter("b4", HUMAN)).rejects.toThrow();
+    expect((await call("/boards/b4", HUMAN)).status).toBe(200);
+  }, 120_000);
 });

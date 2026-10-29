@@ -206,10 +206,15 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const id = c.req.param("id")!;
     await c.var.service.assertExists(id);
     const live = options.live(c.env);
-    // A step that fails is logged and skipped: a bad room must not lock the board, or keep a client out of it.
-    const attempt = (op: string, run: () => Promise<void>) => run().catch((error: unknown) => console.error(JSON.stringify({ level: "error", op, message: loggable(error) })));
-    await attempt("save-room", () => pull(live, c.var.service, id));
-    if (seeding) await attempt("seed-room", () => seed(live, c.var.service, id));
+    // A failed save is logged and skipped: a bad room must not lock the board. A failed seed refuses the join, because a client
+    // that joins a room without the stored board would see a board with parts missing and could draw over it.
+    await pull(live, c.var.service, id).catch((error: unknown) => console.error(JSON.stringify({ level: "error", op: "save-room", message: loggable(error) })));
+    if (seeding) {
+      await seed(live, c.var.service, id).catch((error: unknown) => {
+        console.error(JSON.stringify({ level: "error", op: "seed-room", message: loggable(error) }));
+        throw error instanceof CanvasError ? error : new CanvasError("UNAVAILABLE", "the room could not take the stored board. Try again");
+      });
+    }
   };
   const sync = async (c: Context<App>, next: () => Promise<void>) => {
     if (!/\/(ws|checkpoint)$/.test(new URL(c.req.url).pathname)) await saveRoom(c, false);

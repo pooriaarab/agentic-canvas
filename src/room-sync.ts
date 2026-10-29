@@ -41,7 +41,12 @@ async function roomState(live: Realtime, id: string): Promise<Uint8Array | null>
       if (value) text += decoder.decode(value, { stream: true });
       // A record is one line. The first is `meta`, and the next is the `state` this needs.
       for (let end = text.indexOf("\n"); end >= 0; end = text.indexOf("\n")) {
-        const record = JSON.parse(text.slice(0, end)) as { type?: string; base64?: string };
+        let record: { type?: string; base64?: string };
+        try {
+          record = JSON.parse(text.slice(0, end));
+        } catch {
+          throw new CanvasError("UNAVAILABLE", "the room sent an export this server cannot read");
+        }
         text = text.slice(end + 1);
         if (record.type === "state" && typeof record.base64 === "string") return Uint8Array.from(atob(record.base64), (c) => c.charCodeAt(0));
       }

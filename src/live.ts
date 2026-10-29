@@ -88,7 +88,7 @@ export class LiveBoard {
     // Read the stored board first: it tells a missing board from a failed connection. The server seeds the room from it.
     const stored = await call(options.server, options.token, `/boards/${id}/state`);
     if (!stored.ok) throw await refusal(stored, "could not read the stored board");
-    await stored.arrayBuffer();
+    await stored.body?.cancel();
     const url = new URL(`${base(options.server)}/boards/${id}/ws`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     let client: SyncClient;
