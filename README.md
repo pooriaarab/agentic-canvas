@@ -7,9 +7,10 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.4.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.5.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
+> The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
 
 ## Install
 
@@ -308,6 +309,14 @@ Every name that each entry point exports is listed here. A name marked (type) ex
 | `LiveService` | The CLI and MCP commands, run in a live room. A change joins the room, runs as the token's actor, saves, and leaves. `read` and `exportSvg` join and leave without a save. `create` and `list` call the HTTP API. |
 | `whoAmI(server, token)`, `Me` (type) | Ask the Worker who a token is. It returns the actor and the role. |
 | `LiveOptions` (type) | The server, the board id, the token, and the optional name and reconnect settings. |
+
+### `agentic-canvas/ui`
+
+| Name | What it is |
+|---|---|
+| `mount(element, options)` | Render the board UI into an element. It returns `update(options)` and `unmount()`. See Mount the board in your app. |
+| `BoardEditor(options)` | The same board UI as a React component, without a root. |
+| `BoardEditorOptions` (type), `BoardPrincipal` (type), `MountedBoard` (type) | Types for the options, the principal, and the object that `mount` returns. |
 
 ### `agentic-canvas/worker`
 

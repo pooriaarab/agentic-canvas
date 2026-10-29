@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+No breaking changes.
+
+**Added**
+
+- Export `agentic-canvas/ui`. `mount(element, options)` renders the board UI into any element, with no framework. It returns `update` and `unmount`. `BoardEditor` is the same view as a React component. Import `agentic-canvas/ui.css` for the styles. The live room is an option, so an embed runs without one.
+- The npm package now includes the board UI, built at publish time. Version 0.4.0 did not include it.
+- Document every export of each entry point in the README, with an `agentic-canvas/ui` entry.
+
+**Changed**
+
+- The Worker page renders the same `BoardEditor` that the embed uses.
+- Each entry builds on its own, so `dist/client.js` does not import a shared chunk.
+- The board styles are scoped under `.cv-root`, so they do not change the rest of a host page.
+
 ## 0.4.0
 
 **Breaking changes**
