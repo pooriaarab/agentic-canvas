@@ -5,6 +5,8 @@ import { isBoardId, isStoreId } from "./service.js";
 /** The identity resource type of a board. Scopes read `canvas:<action>`. */
 export const RESOURCE_TYPE = "canvas";
 export { ROLES, SUBJECT_KINDS };
+export type { Grant, InviteSummary, Role, Subject };
+
 /** A share link without its token. `revokedAt` is set once the link is revoked. */
 export interface LinkSummary {
   id: string;
@@ -13,8 +15,6 @@ export interface LinkSummary {
   expiresAt?: number;
   revokedAt?: number;
 }
-
-export type { Grant, InviteSummary, Role, Subject };
 
 /** The roles an invite or a link may give. Only a grant makes an owner. */
 const SHARE_ROLES = ROLES.filter((r) => r !== "owner");
@@ -189,7 +189,7 @@ export class CanvasAccess {
         // A record that is not a share link of this board is not shown. The list says it is not complete.
         // A null `expiresAt` is no expiry, as in agentic-identity. Any other value that is not a time is a dead link there, so it is not shown as one that never ends.
         const expiresOk = data.expiresAt == null || (typeof data.expiresAt === "number" && Number.isFinite(data.expiresAt));
-        if (data.id !== key || data.resourceId !== id || typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role) || !expiresOk) {
+        if (data.id !== key || data.resourceId !== id || typeof data.tokenHash !== "string" || typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role) || !expiresOk) {
           skipped++;
           continue;
         }

@@ -143,12 +143,13 @@ describe("the typed client", () => {
       await tx.put("links", "bad-revoked", { id: "bad-revoked", resourceId: "l-odd", role: "viewer", tokenHash: "x", revokedAt: true });
       await tx.put("links", "bad-expiry", { id: "bad-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: "soon" });
       await tx.put("links", "null-expiry", { id: "null-expiry", resourceId: "l-odd", role: "viewer", tokenHash: "x", expiresAt: null });
+      await tx.put("links", "no-hash", { id: "no-hash", resourceId: "l-odd", role: "viewer" });
       await tx.put("links", "key-a", { id: "key-b", resourceId: "l-odd", role: "viewer", tokenHash: "x" });
     });
     const odd = await ada.links("l-odd");
     expect(odd.links.map((l) => l.id).sort()).toEqual(["bad-revoked", "null-expiry"]);
     expect(odd.links.find((l) => l.id === "null-expiry")).toEqual({ id: "null-expiry", role: "viewer", signedInOnly: false });
-    expect(odd.skipped).toBe(3);
+    expect(odd.skipped).toBe(4);
     expect((await ada.links("l-board")).truncated).toBeUndefined();
   });
 
