@@ -36,6 +36,9 @@ agentic-canvas read demo
 agentic-canvas export demo --out demo.svg
 ```
 
+To edit a board that a person has open, use live mode. Set `CANVAS_SERVER` and `CANVAS_TOKEN`
+and run the same commands. The token names the actor, so leave `CANVAS_ACTOR` unset.
+
 ## Rules
 
 - Name the actor on every write.

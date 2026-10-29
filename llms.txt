@@ -6,6 +6,8 @@ Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 
 - SDK: import { Board, drawFlow, readBoard, toSvg } from "agentic-canvas".
 - CLI: agentic-canvas new|read|add|connect|move|rm|flow|export.
+- Live: set CANVAS_SERVER and CANVAS_TOKEN, and the CLI and `agentic-canvas mcp` edit the board in its live room.
+- SDK: import { LiveBoard, LiveService } from "agentic-canvas/live".
 
 ## Docs
 

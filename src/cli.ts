@@ -7,7 +7,7 @@ import { ActorConfigError, operatorActor } from "./actor.js";
 import type { Principal } from "./core/principal.js";
 import { runMcp } from "./mcp.js";
 import { svgToPng } from "./png.js";
-import { CanvasService } from "./service.js";
+import { CanvasService, type BoardAccess } from "./service.js";
 import { openLocalStore } from "./store-file.js";
 
 class UsageError extends Error {}
@@ -28,6 +28,10 @@ Commands:
   export <board> [--format svg|png] [--out <path>]  Print SVG, or write PNG to --out.
   repair <board> [--drop <element>]...     Owner only: fix a broken or over-cap board. Needs CANVAS_ACTOR=human:<id>.
   mcp                                      Serve these as MCP tools on stdio. Needs CANVAS_ACTOR.
+
+Live mode: set CANVAS_SERVER=<worker url> and CANVAS_TOKEN=<bearer token>. Every command then runs in the live room of
+the board on that server, so a person and an agent can edit one board at once. The token sets the actor, the kind,
+and the role, so CANVAS_ACTOR is not needed. If it is set, it must match the token. --dir and repair are local only.
 
 Write commands need an actor in CANVAS_ACTOR as <kind>:<id>, such as "agent:helper".
 The operator sets it. A caller cannot pick its own kind: there is no --actor flag.
@@ -65,7 +69,24 @@ async function run(argv: string[]): Promise<void> {
   const need = (count: number, shape: string): void => {
     if (positionals.length !== count + 1) throw new UsageError(`usage: ${BRAND.command} ${command} ${shape}`);
   };
+  const server = process.env.CANVAS_SERVER;
+  let live: Principal | undefined;
+  let service: BoardAccess;
+  if (server) {
+    if (v.dir !== undefined) throw new UsageError("--dir is local only: CANVAS_SERVER is set, so the board lives on the server");
+    const token = process.env.CANVAS_TOKEN;
+    if (!token) throw new UsageError("CANVAS_SERVER needs CANVAS_TOKEN");
+    if (command === "repair") throw new UsageError("repair runs on the local store only. Unset CANVAS_SERVER.");
+    const { LiveService, whoAmI } = await import("./live.js");
+    service = new LiveService({ server, token });
+    if (command !== "read" && command !== "export") live = (await whoAmI(server, token)).actor;
+    const claimed = process.env.CANVAS_ACTOR;
+    if (live && claimed && claimed !== `${live.kind}:${live.id}`) throw new UsageError(`CANVAS_ACTOR "${claimed}" does not match the token (${live.kind}:${live.id}). Unset CANVAS_ACTOR.`);
+  } else {
+    service = new CanvasService(openLocalStore(v.dir ?? process.env.CANVAS_DIR ?? ".agentic-canvas"));
+  }
   const actor = (): Principal => {
+    if (live) return live;
     try {
       return operatorActor();
     } catch (error) {
@@ -73,7 +94,6 @@ async function run(argv: string[]): Promise<void> {
       throw error;
     }
   };
-  const service = new CanvasService(openLocalStore(v.dir ?? process.env.CANVAS_DIR ?? ".agentic-canvas"));
   const print = (value: unknown): void => console.log(JSON.stringify(value));
   switch (command) {
     case "new":
@@ -112,7 +132,7 @@ async function run(argv: string[]): Promise<void> {
     }
     case "repair":
       need(1, "<board> [--drop <element>]...");
-      return print(await service.repair(board, actor(), v.drop ?? []));
+      return print(await (service as CanvasService).repair(board, actor(), v.drop ?? []));
     case "mcp":
       need(0, "");
       return runMcp(service, actor());
