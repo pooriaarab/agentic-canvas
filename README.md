@@ -121,6 +121,9 @@ the direction. Lines that start with `#` or `//` are comments.
 
 ## Limits
 
+- Canvas depends on `agentic-identity` 0.4 for its Store and Blobs ports. It does not use
+  the sharing API yet: it holds no roles or grants, and it has no board delete or erase.
+  When it adopts sharing, grants are keyed on kind and id, and a delete calls `deleteResource`.
 - A board holds at most 10,000 elements. A flow holds at most 500 nodes and 2,000
   edges.
 - Flow text has no chains (`A -> B -> C`). Write one edge per line.
