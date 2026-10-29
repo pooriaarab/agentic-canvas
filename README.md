@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.11.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.12.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
@@ -229,6 +229,25 @@ Share links and invite acceptance stay on the HTTP API.
 A live MCP server with an admin token can share boards: an agent that holds it can grant `owner` and revoke grants. Give an agent a token with `canvas:write` only, unless it must share.
 
 The static dev fallback holds no board roles. Its tokens reach every board and cannot share.
+
+## Account export and erase
+
+A host that runs a person's data export and erase imports `canvasAccount` from `agentic-canvas/account`. It never reads the storage layout.
+
+```ts
+import { canvasAccount } from "agentic-canvas/account";
+const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { store, eraseRoom });
+const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, eraseRoom });
+```
+
+The export is plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
+
+- A board that the subject alone owns is deleted with its grants, invites, links, and audit entries. `eraseRoom(boardId)` erases its live room first: give it when rooms run.
+- On any other board, the subject's grant and invites go. The elements it made are deleted. A connector of someone else that was bound to one of them goes too. The members of a deleted group move to its parent. The editor of an element it only edited becomes `erased`, and a title it set is cleared.
+- Its audit entries (it acted, or a grant named it) stay with the id set to `(erased)`. The kinds stay, so an entry still says if a machine acted.
+- A second erase counts zero. Stop writes first: a write between export and erase is erased and not exported.
+- The erase reads every stored board to find the subject's elements. It stops with `INVALID` on a board that does not decode.
+- The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
 
 ## UI
 
