@@ -111,6 +111,22 @@ There is one method per route: `me`, `listBoards`, `createBoard`, `readBoard`, `
 and status 0. The client never retries. A 503 means "try again", and the caller decides, because a
 repeated write can change a board twice. Pass `fetch` to use your own.
 
+## Run locally
+
+```sh
+git clone https://github.com/pooriaarab/agentic-canvas
+cd agentic-canvas
+npm install && npm run dev
+```
+
+`bun install && bun run dev` works too. The `dev` script builds the package, then starts `wrangler dev` on <http://localhost:8793>. Wrangler keeps a local D1 database and a local R2 bucket and sends no telemetry.
+
+```sh
+curl -i http://localhost:8793/health   # 200
+```
+
+`npm run dev:smoke` does the same check by itself: it starts the dev server, waits for `/health` to answer 200, and stops the server. CI runs it as the "dev smoke" step. Each agentic package uses its own default port, so two dev servers can run side by side. To use another port, run `npx wrangler dev --port <n>`.
+
 ## Live demo
 
 A demo Worker runs on workers.dev: <https://agentic-canvas-demo.hello-fd1.workers.dev>. `GET /health` answers 200
