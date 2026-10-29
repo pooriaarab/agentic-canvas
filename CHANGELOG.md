@@ -7,6 +7,13 @@
 - Share links on every surface. The client has `links`, `createLink`, and `revokeLink`. The CLI has `links`, `link`, and `revoke-link`. The MCP server has `list_links`, `create_link`, and `revoke_link`. They need `CANVAS_SERVER` and `CANVAS_TOKEN`, as the other sharing commands do.
 - `GET /boards/:id/links` lists the links of a board for an owner. A summary shows the id, role, sign-in option, expiry, and revoke time. It never shows the token. The list holds up to 200 links, and `truncated: true` says there are more, and `skipped` counts damaged records left out. Live links come first.
 
+## 0.12.1 - 2026-10-29
+
+**Changed**
+
+- Depend on `agentic-identity` 0.9 (was 0.8).
+- Depend on `agentic-realtime` 0.4.4 (was 0.4.2). Realtime now depends on `agentic-identity` 0.9 too, so the package has one copy of it.
+
 ## 0.12.0
 
 **Changed**
