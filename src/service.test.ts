@@ -39,7 +39,8 @@ describe("owner repair actor", () => {
 //  7. A client changes the content of an old element or the title and leaves the stamp as it was: the change is undone.
 //  8. A client adds a root type or a meta key of its own: a root is refused, a key is deleted.
 //  9. A client adds a key of its own to an element: the key is deleted, on an old element and on a new trusted one.
-// 10. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
+// 10. A client writes a title or a title stamp that fails its check, with a trusted stamp or on a board with no title: it is undone.
+// 11. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
 describe("live checkpoint", () => {
   const bot: Principal = { kind: "agent_of_human", id: "helper" };
   const eve: Principal = { kind: "human", id: "eve" };
@@ -134,6 +135,26 @@ describe("live checkpoint", () => {
     const stored = Board.open(await service.state("b")).doc.getMap<Y.Map<unknown>>("elements");
     expect([...stored.get("s1")!.keys()]).not.toContain("junk");
     expect([...stored.get("s2")!.keys()]).not.toContain("junk");
+  });
+
+  test("a title value that fails its check is undone, even with a trusted stamp", async () => {
+    const service = await open();
+    const huge = await room(service, (b) => {
+      b.doc.getMap("meta").set("title", "x".repeat(100_000));
+      b.doc.getMap("meta").set("titleBy", bot);
+    });
+    expect((await service.checkpoint("b", huge, bot, [bot])).fixed).toEqual(["title"]);
+    const bare = new CanvasService(openLocalStore(join(root, `c${n++}`)));
+    await bare.create(human, { id: "b" });
+    const junk = await room(bare, (b) => {
+      b.doc.getMap("meta").set("title", { big: "x".repeat(100_000) });
+      b.doc.getMap("meta").set("titleBy", "junk");
+    });
+    expect((await bare.checkpoint("b", junk, bot, [bot])).fixed).toEqual(["title"]);
+    for (const [s, title] of [[service, "Plan"], [bare, ""]] as const) {
+      expect((await s.read("b")).title).toBe(title);
+      expect((await s.state("b")).length).toBeLessThan(1000);
+    }
   });
 
   test("a garbage update is INVALID, an unknown board is NOT_FOUND, and a connector on a deleted shape goes too", async () => {

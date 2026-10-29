@@ -287,12 +287,17 @@ export class Board {
         extra.forEach((key) => entry.delete(key));
         if (extra.length > 0 && !fixed.includes(el.id)) fixed.push(el.id);
       }
+      // Compare the raw values: a getter hides a value that fails its check, but the doc still holds it.
+      const same = (key: string) => JSON.stringify(this.meta.get(key)) === JSON.stringify(prior.meta.get(key));
       const by = this.titleBy;
-      const stampKept = by && prior.titleBy ? samePrincipal(by, prior.titleBy) : by === prior.titleBy;
-      if (!(by && trusted(by)) && (this.title !== prior.title || !stampKept)) {
-        if (prior.titleBy) this.meta.set("titleBy", prior.titleBy);
-        else this.meta.delete("titleBy");
-        this.meta.set("title", prior.title);
+      const title = this.meta.get("title");
+      const honest = by !== undefined && trusted(by) && (title === undefined || titleSchema.safeParse(title).success);
+      if (!honest && !(same("title") && same("titleBy"))) {
+        for (const key of ["title", "titleBy"]) {
+          const old = prior.meta.get(key);
+          if (old === undefined) this.meta.delete(key);
+          else this.meta.set(key, old);
+        }
         fixed.push("title");
       }
       for (const key of [...this.meta.keys()]) {
