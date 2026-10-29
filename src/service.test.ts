@@ -227,3 +227,72 @@ describe("missingFrom", () => {
     expect(await service.missingFrom("b")).not.toBeNull();
   });
 });
+
+// Failure cases for server-stamped authors, written before `writer` was read. The room's log says who sent each Yjs
+// item. A save must not let a client:
+//  1. Put another principal, or a person, on an element it created, even a principal that is in the room.
+//  2. Keep an old editor on content it changed, or claim another editor for it.
+//  3. Put another principal on the title.
+//  And with no writer for an item, the save must fall back to the trusted list, which refuses what it did before.
+describe("stamps from the writer", () => {
+  const bot: Principal = { kind: "agent_of_human", id: "helper" };
+  const ada: Principal = { kind: "human", id: "ada" };
+  const BOT_CLIENT = 777;
+  const writer = ({ client }: { client: number }) => (client === BOT_CLIENT ? bot : undefined);
+  const open = async () => {
+    const service = new CanvasService(openLocalStore(join(root, `w${n++}`)));
+    await service.create(ada, { id: "b", title: "Plan" });
+    await service.add("b", { id: "s1", type: "rect", x: 0, y: 0 }, ada);
+    return service;
+  };
+  const room = async (service: CanvasService, edit: (board: Board) => void) => {
+    const board = Board.decode(await service.state("b"));
+    board.doc.clientID = BOT_CLIENT;
+    edit(board);
+    return board.encode();
+  };
+  const raw = (board: Board, id: string, fields: object) => board.doc.getMap<Y.Map<unknown>>("elements").set(id, new Y.Map(Object.entries(fields)));
+
+  test("a new element gets its sender as author and editor, even when it names a person in the room", async () => {
+    const service = await open();
+    const update = await room(service, (b) => raw(b, "fake", { id: "fake", type: "rect", x: 0, y: 0, w: 5, h: 5, text: "", z: 9, author: ada, editedBy: ada }));
+    const result = await service.checkpoint("b", update, null, [ada, bot], writer);
+    expect(result.fixed).toEqual(["fake"]);
+    expect((await service.read("b")).nodes.find((n) => n.id === "fake")).toMatchObject({ author: bot, editedBy: bot, machineMade: true });
+  });
+
+  test("changed content gets its sender as editor, and the author stays", async () => {
+    const service = await open();
+    const update = await room(service, (b) => {
+      const entry = b.doc.getMap<Y.Map<unknown>>("elements").get("s1")!;
+      entry.set("text", "changed");
+      entry.set("editedBy", ada);
+    });
+    expect((await service.checkpoint("b", update, null, [ada, bot], writer)).fixed).toEqual(["s1"]);
+    expect((await service.read("b")).nodes[0]).toMatchObject({ text: "changed", author: ada, editedBy: bot, lastEditMachineMade: true });
+  });
+
+  test("an element with an honest stamp is no fix", async () => {
+    const service = await open();
+    const update = await room(service, (b) => b.update("s1", { text: "mine" }, bot));
+    expect((await service.checkpoint("b", update, null, [ada, bot], writer)).fixed).toEqual([]);
+  });
+
+  test("a title stamped with a person in the room is stamped with its sender", async () => {
+    const service = await open();
+    const update = await room(service, (b) => {
+      b.doc.getMap("meta").set("title", "Hacked");
+      b.doc.getMap("meta").set("titleBy", ada);
+    });
+    expect((await service.checkpoint("b", update, null, [ada, bot], writer)).fixed).toEqual(["title"]);
+    expect((await service.read("b")).title).toBe("Hacked");
+  });
+
+  test("an item with no writer falls back to the trusted list", async () => {
+    const service = await open();
+    const update = await room(service, (b) => raw(b, "fake", { id: "fake", type: "rect", x: 0, y: 0, w: 5, h: 5, text: "", z: 9, author: ada, editedBy: ada }));
+    const result = await service.checkpoint("b", update, null, [bot], () => undefined);
+    expect(result.fixed).toEqual(["fake"]);
+    expect((await service.read("b")).nodes.map((n) => n.id)).toEqual(["s1"]);
+  });
+});

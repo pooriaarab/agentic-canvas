@@ -10,6 +10,8 @@ import { FileStoreError } from "./store-errors.js";
 const COLLECTION = "boards";
 /** The most a stored board may hold after a save. A room holds 1.5 MB at most, and Yjs keeps the keys of deleted entries. */
 export const MAX_LIVE_BYTES = 1_572_864;
+/** Who sent the Yjs item with this id, if the room knows. */
+export type Writer = (item: { client: number; clock: number }) => Principal | undefined;
 const BOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function toBase64(bytes: Uint8Array): string {
@@ -142,6 +144,7 @@ export class CanvasService {
   }
 
   /**
+   * `writer` names who sent each Yjs item, from the room's log. It sets the stamps where it knows (see `Board.restamp`).
    * Merge a live room's state into the stored board. `authors` are the principals the room saw send updates. A null
    * `actor` trusts only them: the Worker saves a room that way, with nobody present to vouch.
    * An element stamped by anyone else is deleted, and a changed author is put back (see `Board.restamp`),
@@ -150,10 +153,11 @@ export class CanvasService {
    *
    * Limits: the save corrects the stored board only. The room keeps what its clients wrote, so a client that sees
    * a non-empty `fixed` must join again, or its later edits are lost at the next save. The room remembers its
-   * authors for good, so a client may stamp an element with the name of anyone who once sent an update in that room.
+   * authors for good, so where the room's log has no writer for an item (the log keeps a capped number of ranges), a client
+   * may stamp it with the name of anyone who once sent an update in that room. Where the log has one, the stamp is the writer's.
    * A client that adds a root type of its own makes every later save of that room fail, because the room keeps it.
    */
-  async checkpoint(id: string, update: Uint8Array, actor: Principal | null, authors: Principal[] = []): Promise<{ elements: number; fixed: string[] }> {
+  async checkpoint(id: string, update: Uint8Array, actor: Principal | null, authors: Principal[] = [], writer?: Writer): Promise<{ elements: number; fixed: string[] }> {
     boardKey(id);
     const by = actor === null ? null : principalSchema.safeParse(actor);
     if (by && !by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
@@ -171,7 +175,7 @@ export class CanvasService {
       // A root type other than the two a board uses would be stored and sent back to every client for ever.
       const strange = [...next.doc.share.keys()].filter((key) => key !== "elements" && key !== "meta");
       if (strange.length > 0) throw new CanvasError("INVALID", "the update holds data that is not part of a board");
-      const fixed = new Set([...next.restamp(prior, trusted), ...next.repair()]);
+      const fixed = new Set([...next.restamp(prior, trusted, writer), ...next.repair()]);
       const saved = next.encode();
       if (saved.length > MAX_LIVE_BYTES) throw new CanvasError("LIMIT", `the board would hold over ${MAX_LIVE_BYTES} bytes`);
       await tx.put(COLLECTION, id, { update: toBase64(saved) });

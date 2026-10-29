@@ -102,12 +102,18 @@ describe("live room", () => {
     expect(stored.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["s1", "s2"]);
     expect(stored.nodes.find((n: { id: string }) => n.id === "s2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
 
-    // A client that writes raw Yjs puts a person on an element the room never heard from. The save deletes it.
+    // A client that writes raw Yjs puts a person on an element it made. The save stamps the element with the principal the room heard it from.
     bot.doc.getMap<Y.Map<unknown>>("elements").set("fake", new Y.Map(Object.entries({ id: "fake", type: "rect", x: 0, y: 0, w: 5, h: 5, text: "", z: 9, author: { kind: "human", id: "mallory" }, editedBy: { kind: "human", id: "mallory" } })));
+    // It also claims Ada's edit on her shape: Ada is in the room, so the old rule would have trusted the claim.
+    bot.doc.getMap<Y.Map<unknown>>("elements").get("s1")!.set("text", "bot text");
+    bot.doc.getMap<Y.Map<unknown>>("elements").get("s1")!.set("editedBy", { kind: "human", id: "ada" });
     await bot.flush();
     const forged = await save(BOT, bot.doc);
-    expect((await forged.json()).fixed).toEqual(["fake"]);
-    expect((await (await call("/boards/b1", HUMAN)).json()).nodes.map((n: { id: string }) => n.id).sort()).toEqual(["s1", "s2"]);
+    expect((await forged.json()).fixed).toEqual(["fake", "s1"]);
+    const nodes = (await (await call("/boards/b1", HUMAN)).json()).nodes;
+    expect(nodes.map((n: { id: string }) => n.id).sort()).toEqual(["fake", "s1", "s2"]);
+    expect(nodes.find((n: { id: string }) => n.id === "fake")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" }, editedBy: { kind: "agent_of_human", id: "helper" } });
+    expect(nodes.find((n: { id: string }) => n.id === "s1")).toMatchObject({ text: "bot text", author: { kind: "human", id: "ada" }, editedBy: { kind: "agent_of_human", id: "helper" }, lastEditMachineMade: true });
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
 
@@ -145,7 +151,9 @@ describe("live room", () => {
     await worker.stop();
     worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
     const after = await (await call("/boards/b2", HUMAN)).json();
-    expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2"]);
+    expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2", "seedfake"]);
+    // The forged seeder stamp is the sender's own: the save stamped it with the agent that wrote it.
+    expect(after.nodes.find((n: { id: string }) => n.id === "seedfake")).toMatchObject({ author: { kind: "agent_of_human", id: "helper" } });
     expect(JSON.stringify(after)).not.toContain("canvas-room");
     expect(after.nodes.find((n: { id: string }) => n.id === "live2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
   }, 180_000);

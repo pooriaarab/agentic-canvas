@@ -4,7 +4,7 @@ import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } fro
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
 import { principalSchema, type Principal } from "./core/principal.js";
-import { pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
+import { pull, roomAuthors, seed, SEEDER, writers } from "./room-sync.js";
 import { CanvasService, MAX_LIVE_BYTES } from "./service.js";
 
 export interface WorkerEnv {
@@ -250,7 +250,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const update = await readLimited(c.req.raw, MAX_LIVE_BYTES);
     if (!update) throw new CanvasError("INVALID", `the update must be at most ${MAX_LIVE_BYTES} bytes`);
     const authors = await roomAuthors(options.live(c.env), id);
-    return c.json(await c.var.service.checkpoint(id, update, c.var.actor, authors));
+    return c.json(await c.var.service.checkpoint(id, update, c.var.actor, authors, await writers(options.live(c.env), id)));
   });
 
   api.get("/boards", async (c) => c.json({ boards: await c.var.service.list() }));

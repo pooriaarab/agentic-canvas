@@ -2,7 +2,7 @@ import type { Realtime } from "agentic-realtime";
 import * as Y from "yjs";
 import { CanvasError } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
-import type { CanvasService } from "./service.js";
+import type { CanvasService, Writer } from "./service.js";
 
 /**
  * The room is the live copy of a board and the Store is the saved copy. The Worker keeps them together, with no help
@@ -81,6 +81,21 @@ async function send(live: Realtime, id: string, update: Uint8Array, roomVector: 
   }).finally(() => socket.close(1000, "seeded"));
 }
 
+/**
+ * Who sent each Yjs item, from the room's log of updates. The principal is the one the token named, so no client picks it.
+ * The seeder is no author, and an item the log lacks (a range it dropped) has no writer: the save falls back to its other checks.
+ */
+export async function writers(live: Realtime, id: string): Promise<Writer> {
+  const log = await live.attribution(id);
+  const ranges = new Map<number, NonNullable<typeof log>["ranges"]>();
+  for (const range of log?.ranges ?? []) ranges.set(range.client, [...(ranges.get(range.client) ?? []), range]);
+  return ({ client, clock }) => {
+    const range = ranges.get(client)?.find((r) => clock >= r.clock && clock < r.clock + r.length);
+    const who = range && log!.authors[range.author];
+    return who && !same(who, SEEDER) ? { id: who.id, kind: who.kind } : undefined;
+  };
+}
+
 /** The principals the room saw send updates, except the seeder, which is no author. Only these may stamp a save. */
 export async function roomAuthors(live: Realtime, id: string): Promise<Principal[]> {
   return (await live.meta(id)).contributors.filter((c) => !same(c, SEEDER)).map(({ id: who, kind }) => ({ id: who, kind }));
@@ -102,7 +117,7 @@ export async function pull(live: Realtime, service: CanvasService, id: string): 
   const state = await roomState(live, id);
   if (!state) return;
   try {
-    await service.checkpoint(id, state, null, await roomAuthors(live, id));
+    await service.checkpoint(id, state, null, await roomAuthors(live, id), await writers(live, id));
   } catch (error) {
     // A room that fails its checks fails them again until it changes. A busy store is another matter: try that again.
     if (error instanceof CanvasError && error.code !== "UNAVAILABLE") remember(id, mark);

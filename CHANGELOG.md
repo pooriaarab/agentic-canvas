@@ -6,6 +6,9 @@
   delete, pan, zoom, live presence, and a marker on agent items. The browser joins the live room with the token
   as a WebSocket sub-protocol (`agentic-canvas.bearer`), because a browser cannot set a header on a socket.
   Playwright E2E with axe checks run in `npm run ci:local`.
+- Stamp authors on the server. A save takes the author of a new element, the last editor of a changed one, and the
+  title author from the room's log of who sent each update, so a raw Yjs client cannot claim another principal or a
+  person. The stamp is corrected, not deleted, and the save reports the element in `fixed`.
 - Seed a live room from the stored board and save the room back to the Store in the Worker. A raw WebSocket client needs
   no seed or checkpoint call, and room edits reach the Store before the next board read or write. The token table
   refuses the actor `canvas-room` of kind `agent`, which the Worker uses to seed. Needs `agentic-realtime` 0.3. The live client no longer seeds a room, so it needs a Worker of this version.
