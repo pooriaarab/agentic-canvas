@@ -4,7 +4,7 @@
 //
 // Failure-mode list. These were written before the server.
 //  1. CANVAS_ACTOR unset, empty, blank, or bad: the server exits 2 before it
-//     reads a byte, and prints nothing on stdout.
+//     reads a byte, and prints nothing on stdout. See mcp.e2e.test.ts.
 //  2. A tool call carries an actor, author, or kind argument: it is ignored.
 //     The operator's actor stamps the work, never the caller's.
 //  3. The operator runs as human: work reads back as human, not machine-made.
@@ -17,7 +17,6 @@
 //  8. A tool call with a wrong argument type is refused by the schema.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,35 +41,6 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   const first = result.content[0];
   return { error: result.isError === true, content: result.content, value: first.type === "text" && /^[{[]/.test(first.text!) ? JSON.parse(first.text!) : undefined };
 }
-
-function start(dir: string, env: Record<string, string>): Promise<{ code: number; out: string; err: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [BIN, "--dir", dir, "mcp"], { env: { PATH: process.env.PATH ?? "", ...env } });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (err += d));
-    child.on("close", (code) => resolve({ code: code ?? -1, out, err }));
-    child.stdin.end();
-  });
-}
-
-describe("start", () => {
-  test.each([
-    ["unset", {}],
-    ["empty", { CANVAS_ACTOR: "" }],
-    ["blank", { CANVAS_ACTOR: "  " }],
-    ["no colon", { CANVAS_ACTOR: "agent" }],
-    ["unknown kind", { CANVAS_ACTOR: "robot:x" }],
-    ["empty id", { CANVAS_ACTOR: "agent:" }],
-  ])("CANVAS_ACTOR %s: exit 2, nothing on stdout", async (_name, env) => {
-    const dir = fresh();
-    const r = await start(dir, env);
-    expect([r.code, r.out]).toEqual([2, ""]);
-    expect(r.err).toContain("CANVAS_ACTOR");
-    expect(r.err).not.toMatch(/\n\s+at /);
-  });
-});
 
 describe("tools", () => {
   test("lists a tool for every CLI command and the exports", async () => {
