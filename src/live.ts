@@ -37,6 +37,13 @@ async function refusal(response: Response, fallback: string): Promise<CanvasErro
   return new CanvasError(code, typeof error?.message === "string" ? error.message : `${fallback} (${response.status})`);
 }
 
+/** A JSON body, or a CanvasError: a server that answers 200 with anything else is no server this client knows. */
+async function json(response: Response): Promise<Record<string, unknown>> {
+  const body: unknown = await response.json().catch(() => undefined);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new CanvasError("INVALID", "the server sent a body this client does not know");
+  return body as Record<string, unknown>;
+}
+
 const unreachable = (error: unknown): CanvasError =>
   error instanceof CanvasError ? error : new CanvasError("UNAVAILABLE", `could not reach the live server: ${error instanceof Error ? error.message : String(error)}`);
 
@@ -49,7 +56,7 @@ async function call(server: string, token: string, path: string, init: RequestIn
 export async function whoAmI(server: string, token: string): Promise<Me> {
   const response = await call(server, token, "/me");
   if (!response.ok) throw await refusal(response, "the server refused the token");
-  const { actor, kind, role } = (await response.json()) as { actor?: unknown; kind?: unknown; role?: unknown };
+  const { actor, kind, role } = await json(response);
   const principal = principalSchema.safeParse({ kind, id: actor });
   if (!principal.success || (role !== "editor" && role !== "viewer")) throw new CanvasError("INVALID", "the server sent an identity this client does not know");
   return { actor: principal.data, role };
@@ -68,6 +75,13 @@ export class LiveBoard {
     private readonly options: LiveOptions,
     private readonly refusedAtStart: number,
   ) {}
+
+  private changed = new Set<string>();
+
+  /** The ids of the elements that the last `edit` added, changed, or removed. */
+  get touched(): ReadonlySet<string> {
+    return this.changed;
+  }
 
   static async join(options: LiveOptions): Promise<LiveBoard> {
     const me = await whoAmI(options.server, options.token);
@@ -114,7 +128,11 @@ export class LiveBoard {
   async edit<T>(run: (board: Board, actor: Principal) => T): Promise<T> {
     if (this.me.role === "viewer") throw new CanvasError("FORBIDDEN", "this token is a viewer; it cannot change a board");
     const seen = this.denied.length;
+    const snapshot = () => new Map(this.board.list().map((e) => [e.id, JSON.stringify(e)]));
+    const before = snapshot();
     const result = run(this.board, this.me.actor);
+    const after = snapshot();
+    this.changed = new Set([...before.keys(), ...after.keys()].filter((id) => before.get(id) !== after.get(id)));
     await this.client.flush();
     if (this.denied.length > seen) throw new CanvasError("FORBIDDEN", `the room refused the edit: ${this.denied[seen]}`);
     return result;
@@ -134,7 +152,9 @@ export class LiveBoard {
     await this.client.flush();
     const saved = await call(this.options.server, this.options.token, `/boards/${encodeURIComponent(this.id)}/checkpoint`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: this.board.encode() as BodyInit });
     if (!saved.ok) throw await refusal(saved, "the server did not save the board");
-    return (await saved.json()) as { elements: number; fixed: string[] };
+    const { elements, fixed } = await json(saved);
+    if (typeof elements !== "number" || !Array.isArray(fixed) || !fixed.every((id) => typeof id === "string")) throw new CanvasError("INVALID", "the server sent a save result this client does not know");
+    return { elements, fixed: fixed as string[] };
   }
 
   async leave(): Promise<void> {
@@ -145,6 +165,7 @@ export class LiveBoard {
 /**
  * The commands of the CLI and the MCP server, run in a live room. Each call joins the room, runs one change as the
  * token's actor, saves to the stored board, and leaves. The `actor` argument is ignored: the server decides who writes.
+ * A read shows the room, which the server checks only when it saves: a forged stamp can show until then.
  */
 export class LiveService implements BoardAccess {
   constructor(private readonly options: Omit<LiveOptions, "board">) {}
@@ -156,7 +177,9 @@ export class LiveService implements BoardAccess {
   async create(_actor: Principal, options: { id?: string; title?: string } = {}): Promise<{ id: string; title: string }> {
     const response = await call(this.options.server, this.options.token, "/boards", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(options) });
     if (!response.ok) throw await refusal(response, "the server refused the request");
-    return (await response.json()) as { id: string; title: string };
+    const { id, title } = await json(response);
+    if (typeof id !== "string" || typeof title !== "string") throw new CanvasError("INVALID", "the server sent a board this client does not know");
+    return { id, title };
   }
 
   async read(id: string): Promise<BoardData & { id: string }> {
@@ -202,7 +225,8 @@ export class LiveService implements BoardAccess {
       const saved = await live.save().catch((error: unknown) => {
         throw new CanvasError(error instanceof CanvasError ? error.code : "UNAVAILABLE", `the room has the change, but it is not saved: ${error instanceof Error ? error.message : String(error)}. Do not repeat the change.`);
       });
-      if (saved.fixed.length > 0) throw new CanvasError("FORBIDDEN", `the server undid the change to ${saved.fixed.length} element(s) because of its author checks`);
+      // The checks cover the whole room. Another client's forged element is no failure of this change.
+      if (saved.fixed.some((id) => live.touched.has(id))) throw new CanvasError("FORBIDDEN", "the server undid the change because of its author checks. Do not repeat the change.");
       return result;
     });
   }
