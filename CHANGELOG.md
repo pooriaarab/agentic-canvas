@@ -4,7 +4,7 @@
 
 **Breaking changes**
 
-- A live client needs a Worker of 0.4.0. The client no longer seeds a room. The Worker seeds the room from the stored board when a client connects. An older Worker does not seed it, so a new client joins an empty room.
+- A live client needs a Worker of 0.4.0. The client no longer seeds a room. The Worker seeds the room from the stored board when a client connects. An older Worker does not seed it, so a new client joins an empty room. The Worker refuses a live join when it cannot seed the room, usually with `UNAVAILABLE`.
 - The Worker refuses the token actor `canvas-room` of kind `agent`. The Worker uses this actor to seed rooms. The Worker refuses a token that names it.
 - The Worker stamps authors on save. A save takes the author of a new element, the last editor of a changed one, and the title author from the room's log of who sent each update. The save corrects a wrong stamp and reports the element in `fixed`. The save deletes an element, or undoes a change, that it cannot name a writer for. A raw Yjs client cannot claim another principal or a person.
 - Depend on `agentic-realtime` 0.3 (was 0.1) and `agentic-identity` 0.5 (was 0.4).
