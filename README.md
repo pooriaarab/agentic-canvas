@@ -111,6 +111,26 @@ There is one method per route: `me`, `listBoards`, `createBoard`, `readBoard`, `
 and status 0. The client never retries. A 503 means "try again", and the caller decides, because a
 repeated write can change a board twice. Pass `fetch` to use your own.
 
+## Live demo
+
+A demo Worker runs on workers.dev: <https://agentic-canvas-demo.hello-fd1.workers.dev>. `GET /health` answers 200
+and the web UI is at the root. The API needs a token, so a request without one gets 401. The demo's D1
+database and R2 bucket are in the EU, and its live rooms use the EU jurisdiction. The demo data can be
+reset at any time.
+
+To redeploy it, a maintainer with a Cloudflare token runs this from the repo root. The deploy is manual and
+no CI secret is used:
+
+```sh
+npm ci && npm run build
+WRANGLER_SEND_METRICS=false CLOUDFLARE_API_TOKEN=... npx wrangler deploy -c wrangler.demo.jsonc
+npx wrangler secret put CANVAS_API_TOKENS -c wrangler.demo.jsonc   # only to set or rotate tokens
+```
+
+`wrangler.demo.jsonc` holds the config. The tokens are a Worker secret and are not in the repo. To run your
+own copy, create a D1 database and an R2 bucket (both in the EU), put their names and id in a copy of that
+file, and deploy it the same way.
+
 ## UI
 
 The Worker serves a small web UI at its root. It uses the published `agentic-design` package for

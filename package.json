@@ -69,6 +69,7 @@
     "test": "vitest run",
     "clean": "rm -rf dist",
     "ci:local": "npm run build && npm run typecheck && npm test && npm run test:e2e",
+    "deploy:demo": "wrangler deploy -c wrangler.demo.jsonc",
     "test:e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
