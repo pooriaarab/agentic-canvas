@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add `GET /boards` and `PATCH /boards/:id/elements/:element`, the client methods `listBoards` and `update`, the CLI
+  commands `list` and `update`, and the MCP tools `list_boards` and `update_element`. They work on the local store
+  and in a live room. A list shows the first 100 boards.
+
 ## 0.3.0
 
 - Add a typed remote client for the Worker API (`agentic-canvas/client`). `createClient({ baseUrl, token, fetch? })`

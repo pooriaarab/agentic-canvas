@@ -208,6 +208,8 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json(await c.var.service.checkpoint(id, update, c.var.actor, authors));
   });
 
+  api.get("/boards", async (c) => c.json({ boards: await c.var.service.list() }));
+
   api.post("/boards", async (c) => {
     const b = await jsonBody(c);
     const id = b.id === undefined ? undefined : text(b.id, "id");
@@ -224,6 +226,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const b = await jsonBody(c);
     return c.json(await c.var.service.move(c.req.param("id"), text(b.element, "element"), num(b.dx, "dx"), num(b.dy, "dy"), c.var.actor));
   });
+  api.patch("/boards/:id/elements/:element", async (c) => c.json(await c.var.service.update(c.req.param("id"), c.req.param("element"), await jsonBody(c), c.var.actor)));
   api.delete("/boards/:id/elements/:element", async (c) => {
     const removed = await c.var.service.remove(c.req.param("id"), c.req.param("element"));
     // The board keeps no record of a delete, so the Worker logs who did it. Only the kind: ids and names stay out of logs.

@@ -43,6 +43,11 @@ export function createMcpServer(service: BoardAccess, actor: Principal): McpServ
     tool(async (a) => json(await service.create(actor, a))),
   );
   server.registerTool(
+    "list_boards",
+    { description: "List the first 100 boards with their titles.", inputSchema: {}, annotations: read },
+    tool(async () => json({ boards: await service.list() })),
+  );
+  server.registerTool(
     "read_board",
     { description: "Read a board as data: nodes, edges, groups, text, and who made what.", inputSchema: { board }, annotations: read },
     tool(async (a) => json(await service.read(a.board))),
@@ -71,6 +76,14 @@ export function createMcpServer(service: BoardAccess, actor: Principal): McpServ
     "connect",
     { description: "Join two shapes with an arrow.", inputSchema: { board, from: z.string(), to: z.string(), id: z.string().optional(), text: z.string().optional() } },
     tool(async (a) => json(await service.connect(a.board, { id: a.id, from: { id: a.from }, to: { id: a.to }, text: a.text }, actor))),
+  );
+  server.registerTool(
+    "update_element",
+    {
+      description: "Change fields of a shape (x, y, w, h, text, fill, stroke) or a connector. Resize with w and h.",
+      inputSchema: { board, element: z.string(), x: num.optional(), y: num.optional(), w: num.optional(), h: num.optional(), text: z.string().optional(), fill: z.string().optional(), stroke: z.string().optional() },
+    },
+    tool(async ({ board: b, element, ...patch }) => json(await service.update(b, element, patch, actor))),
   );
   server.registerTool(
     "move",

@@ -184,6 +184,14 @@ export class LiveService implements BoardAccess {
     return { id, title };
   }
 
+  async list(): Promise<{ id: string; title: string }[]> {
+    const response = await call(this.options.server, this.options.token, "/boards");
+    if (!response.ok) throw await refusal(response, "the server refused the request");
+    const { boards } = await json(response);
+    if (!Array.isArray(boards) || !boards.every((b) => typeof b?.id === "string" && typeof b?.title === "string")) throw new CanvasError("INVALID", "the server sent a board list this client does not know");
+    return boards as { id: string; title: string }[];
+  }
+
   async read(id: string): Promise<BoardData & { id: string }> {
     return this.use(id, async (live) => ({ id, ...readBoard(live.board) }));
   }
@@ -198,6 +206,10 @@ export class LiveService implements BoardAccess {
 
   connect(id: string, connector: unknown, _actor?: Principal) {
     return this.write(id, (board, actor) => board.addConnector(connector, actor));
+  }
+
+  update(id: string, element: string, patch: unknown, _actor?: Principal) {
+    return this.write(id, (board, actor) => board.update(element, patch, actor));
   }
 
   move(id: string, element: string, dx: number, dy: number, _actor?: Principal) {

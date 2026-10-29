@@ -12,7 +12,7 @@ actor. The author kind never changes.
 
 - SDK: `import { Board, readBoard, drawFlow } from "agentic-canvas"`.
 - CLI: `npx agentic-canvas <command>`. Set `CANVAS_ACTOR=agent:<name>` first.
-  Commands: new, read, add, connect, move, rm, flow, export.
+  Commands: new, list, read, add, connect, update, move, rm, flow, export.
 - MCP: `CANVAS_ACTOR=<kind>:<id> npx agentic-canvas mcp` (stdio).
 - Live: with `CANVAS_SERVER` and `CANVAS_TOKEN` set, the CLI and MCP join the board's live room. The token names the actor. HTTP API: a Worker under `/api/v1/canvas` (D1 + R2).
 

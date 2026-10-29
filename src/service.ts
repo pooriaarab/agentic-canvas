@@ -57,6 +57,18 @@ export class CanvasService {
     });
   }
 
+  /** The first 100 boards (the store sorts by id), with titles. A board whose stored bytes are damaged shows an empty title: it stays in the list so a person can find and repair it. */
+  async list(): Promise<{ id: string; title: string }[]> {
+    const page = await this.store.query(COLLECTION, { limit: 100 }).catch(storeFailure);
+    return page.items.map(({ id, data }) => {
+      try {
+        return { id, title: decodeStored(data, id, Board.decode).title };
+      } catch {
+        return { id, title: "" };
+      }
+    });
+  }
+
   /** Throws NOT_FOUND unless the board exists. A live room opens only for a board that exists. */
   async assertExists(id: string): Promise<void> {
     boardKey(id);
@@ -85,6 +97,11 @@ export class CanvasService {
 
   connect(id: string, connector: unknown, actor: Principal) {
     return this.change(id, (b) => b.addConnector(connector, actor));
+  }
+
+  /** Change fields of one shape or connector: position, size, text, colors. */
+  update(id: string, elementId: string, patch: unknown, actor: Principal) {
+    return this.change(id, (b) => b.update(elementId, patch, actor));
   }
 
   move(id: string, elementId: string, dx: number, dy: number, actor: Principal) {
@@ -181,4 +198,4 @@ function decodeStored(doc: { update?: unknown }, id: string, decode: (bytes: Uin
 }
 
 /** What the CLI and the MCP server need. `CanvasService` runs it on a store, and `LiveService` runs it in a live room. */
-export type BoardAccess = Pick<CanvasService, "create" | "read" | "add" | "connect" | "move" | "remove" | "flow" | "exportSvg">;
+export type BoardAccess = Pick<CanvasService, "create" | "list" | "read" | "update" | "add" | "connect" | "move" | "remove" | "flow" | "exportSvg">;
