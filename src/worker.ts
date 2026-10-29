@@ -4,6 +4,7 @@ import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } fro
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
 import { principalSchema, type Principal } from "./core/principal.js";
+import { pull, seed, SEEDER } from "./room-sync.js";
 import { CanvasService, MAX_LIVE_BYTES } from "./service.js";
 
 export interface WorkerEnv {
@@ -84,7 +85,9 @@ export function authenticate(request: Request, env: WorkerEnv): { actor: Princip
   const { actor, kind, role = "editor" } = found as Record<string, unknown>;
   const parsed = principalSchema.safeParse({ kind, id: actor });
   // A role that is not one we know denies the token. It never falls back to editor.
-  return parsed.success && (role === "editor" || role === "viewer") ? { actor: parsed.data, role } : null;
+  // The id of the room's own seeder is taken: a token under it would pass for the Worker in a room's list of authors.
+  const taken = parsed.success && parsed.data.kind === SEEDER.kind && parsed.data.id === SEEDER.id;
+  return parsed.success && !taken && (role === "editor" || role === "viewer") ? { actor: parsed.data, role } : null;
 }
 
 /** The image types we accept, found by their first bytes. The client's claim of a type is not trusted. */
@@ -196,13 +199,36 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   // Who the token stands for. A live client reads its actor here, so it never claims one.
   api.get("/me", (c) => c.json({ actor: c.var.actor.id, kind: c.var.actor.kind, role: c.var.role }));
 
+  // A room and the Store hold one board. Before a request reads or changes a board, the Worker saves the room to the Store,
+  // so a board read or write sees what the room has. Live rooms only. A room that fails its checks is skipped: it must not lock the board.
+  const saveRoom = async (c: Context<App>, seeding: boolean) => {
+    if (!options.live) return;
+    const id = c.req.param("id")!;
+    await c.var.service.assertExists(id);
+    const live = options.live(c.env);
+    let state: Uint8Array | null = null;
+    try {
+      state = await pull(live, c.var.service, id);
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", op: "save-room", message: loggable(error) }));
+    }
+    if (seeding) await seed(live, c.var.service, id, state);
+  };
+  const sync = async (c: Context<App>, next: () => Promise<void>) => {
+    if (!/\/(ws|checkpoint)$/.test(new URL(c.req.url).pathname)) await saveRoom(c, false);
+    await next();
+  };
+  api.use("/boards/:id", sync);
+  api.use("/boards/:id/*", sync);
+
   // The live room. The token sets the actor, the kind, and the role. The room opens only for a board that exists.
   // A viewer joins and reads, and the room drops its writes.
   api.get("/boards/:id/ws", async (c) => {
     if (!options.live) return fail("NOT_FOUND", "this server hosts no live rooms", 404);
     if (c.req.header("upgrade") !== "websocket") return fail("UPGRADE_REQUIRED", "open this route as a WebSocket", 426);
     const id = c.req.param("id");
-    await c.var.service.assertExists(id);
+    // Save the room, then give it any part of the stored board that it lacks, so a client that joins needs no seed of its own.
+    await saveRoom(c, true);
     const { actor, role } = c.var;
     const opened = await options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
     // A browser closes a socket whose answer does not pick one of the sub-protocols it offered.
@@ -212,7 +238,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return new Response(null, { status: 101, headers, webSocket: (opened as unknown as { webSocket: unknown }).webSocket } as ResponseInit);
   });
 
-  // A client reads the start state of a room here, applies it to the room, and saves the room back. These are sync plumbing, not board commands.
+  // A client may read the stored board here and post a room back. The Worker does both itself now. These stay for clients that save by hand, and are sync plumbing, not board commands.
   // Without live rooms these routes answer 404, so a plain Worker has no raw-Yjs write path.
   api.get("/boards/:id/state", async (c) => !options.live ? fail("NOT_FOUND", "this server hosts no live rooms", 404) : c.body(new Uint8Array(await c.var.service.state(c.req.param("id"))), 200, { "content-type": "application/octet-stream" }));
   api.post("/boards/:id/checkpoint", async (c) => {

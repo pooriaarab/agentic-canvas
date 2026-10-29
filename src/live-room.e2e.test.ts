@@ -110,4 +110,36 @@ describe("live room", () => {
     expect((await (await call("/boards/b1", HUMAN)).json()).nodes.map((n: { id: string }) => n.id).sort()).toEqual(["s1", "s2"]);
     expect((await call("/boards/nope/checkpoint", BOT, { method: "POST", body: Y.encodeStateAsUpdate(bot.doc) as BodyInit })).status).toBe(404);
   }, 120_000);
+
+  test("the Worker seeds a room from the Store and saves the room back, with no help from the client", async () => {
+    worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
+    await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b2" }) });
+    // A change over HTTP, before any room exists.
+    await call("/boards/b2/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: "rest1", type: "rect", x: 0, y: 0 }) });
+
+    // A raw client joins and sees it: the Worker seeded the room. The seed is no author of the board.
+    const ada = await enter("b2", HUMAN);
+    await until(() => new Board(ada.doc).get("rest1") !== undefined, "the room to hold the stored shape");
+    expect(new Board(ada.doc).get("rest1")).toMatchObject({ author: { kind: "human", id: "ada" } });
+    new Board(ada.doc).addShape({ id: "live1", type: "ellipse", x: 5, y: 5 }, { kind: "human", id: "ada" });
+    await ada.flush();
+
+    // The next HTTP call sees the room's edit, with no checkpoint. Then it changes the board, and the room gets that.
+    const read = await (await call("/boards/b2", HUMAN)).json();
+    expect(read.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "rest1"]);
+    await call("/boards/b2/shapes", BOT, { method: "POST", body: JSON.stringify({ id: "rest2", type: "rect", x: 9, y: 9 }) });
+    await call("/boards/b2/elements/rest1", HUMAN, { method: "DELETE" });
+    await clients.splice(0)[0]!.disconnect();
+    const bob = await enter("b2", BOT);
+    await until(() => new Board(bob.doc).list().map((e) => e.id).sort().join() === "live1,rest2", "the room to take the HTTP changes");
+    new Board(bob.doc).addShape({ id: "live2", type: "rect", x: 1, y: 1 }, { kind: "agent_of_human", id: "helper" });
+    await bob.flush();
+
+    // Restart: the edit that only the room has (live2) is in the Store after the next request, and the seeder never shows as an author.
+    await worker.stop();
+    worker = await startWorker({ port: PORT + 1, persistTo, vars: OPEN });
+    const after = await (await call("/boards/b2", HUMAN)).json();
+    expect(after.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["live1", "live2", "rest2"]);
+    expect(after.nodes.find((n: { id: string }) => n.id === "live2")).toMatchObject({ machineMade: true, author: { kind: "agent_of_human", id: "helper" } });
+  }, 180_000);
 });
