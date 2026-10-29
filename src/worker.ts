@@ -1,4 +1,5 @@
 import { parseRegion, type Blobs, type Region } from "agentic-identity";
+import type { Realtime } from "agentic-realtime";
 import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } from "agentic-identity/cloudflare";
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
@@ -9,8 +10,9 @@ export interface WorkerEnv {
   DB: D1Like;
   IMAGES: R2Like;
   /**
-   * JSON: `{ "<token>": { "actor": "ada", "kind": "human" } }`. A token has 32 characters or more.
+   * JSON: `{ "<token>": { "actor": "ada", "kind": "human", "role": "viewer" } }`. A token has 32 characters or more.
    * A grant needs an actor id and a kind. A token with a missing or bad part gets 401.
+   * The role is "editor" (the default) or "viewer". A viewer reads and cannot write, over HTTP or in a live room.
    * Without this setting, every request gets 401. Every token reaches every board.
    */
   CANVAS_API_TOKENS?: string;
@@ -27,7 +29,13 @@ export interface WorkerEnv {
 const MIN_TOKEN_LENGTH = 32;
 const DEFAULT_MAX_IMAGE_BYTES = 1_000_000;
 const MAX_JSON_BYTES = 1_000_000;
-type App = { Bindings: WorkerEnv; Variables: { service: CanvasService; blobs: Blobs; actor: Principal } };
+export type Role = "editor" | "viewer";
+type App = { Bindings: WorkerEnv; Variables: { service: CanvasService; blobs: Blobs; actor: Principal; role: Role } };
+
+export interface AppOptions {
+  /** Makes the live-room server from the Worker bindings. Without it, the ws route answers 404. */
+  live?: (env: WorkerEnv) => Realtime;
+}
 
 const STATUS: Record<ErrorCode, number> = {
   INVALID: 422, DUPLICATE_ID: 409, NOT_FOUND: 404, BAD_REFERENCE: 422, LIMIT: 422, UNAVAILABLE: 503, FORBIDDEN: 403,
@@ -44,8 +52,8 @@ function sameText(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** The principal for a bearer token, or null. The kind is never defaulted: a grant without a valid kind gets null. */
-export function authenticate(request: Request, env: WorkerEnv): Principal | null {
+/** The principal and role for a bearer token, or null. The kind is never defaulted: a grant without a valid kind gets null. */
+export function authenticate(request: Request, env: WorkerEnv): { actor: Principal; role: Role } | null {
   const token = /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
   if (!token || !env.CANVAS_API_TOKENS) return null;
   let grants: unknown;
@@ -60,9 +68,10 @@ export function authenticate(request: Request, env: WorkerEnv): Principal | null
     if (sameText(candidate, token) && candidate.length >= MIN_TOKEN_LENGTH) found = grant;
   }
   if (typeof found !== "object" || found === null) return null;
-  const { actor, kind } = found as Record<string, unknown>;
+  const { actor, kind, role = "editor" } = found as Record<string, unknown>;
   const parsed = principalSchema.safeParse({ kind, id: actor });
-  return parsed.success ? parsed.data : null;
+  // A role that is not one we know denies the token. It never falls back to editor.
+  return parsed.success && (role === "editor" || role === "viewer") ? { actor: parsed.data, role } : null;
 }
 
 /** The image types we accept, found by their first bytes. The client's claim of a type is not trusted. */
@@ -146,7 +155,7 @@ const LOGGABLE = /^(D1_ERROR[^"]{0,150}|transaction kept conflicting)/;
 const TEMPORARY = /commit token|busy|locked|reset|overloaded|time ?out|timed out|temporar|unspecified error|network/i;
 const loggable = (error: unknown): string => (error instanceof Error ? (LOGGABLE.exec(error.message)?.[0] ?? error.name) : "unknown");
 
-export function createApp(): Hono<App> {
+export function createApp(options: AppOptions = {}): Hono<App> {
   const app = new Hono<App>();
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -159,14 +168,30 @@ export function createApp(): Hono<App> {
       return fail("NOT_CONFIGURED", 'set CANVAS_REGION to "eu", "us", or "unknown"', 503);
     }
     if (!c.env.DB || !c.env.IMAGES) return fail("NOT_CONFIGURED", "bind DB (D1) and IMAGES (R2)", 503);
-    const actor = authenticate(c.req.raw, c.env);
-    if (!actor) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
-    c.set("actor", actor);
+    const who = authenticate(c.req.raw, c.env);
+    if (!who) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
+    if (who.role === "viewer" && c.req.method !== "GET") return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
+    c.set("actor", who.actor);
+    c.set("role", who.role);
     await ready(c.env.DB);
     c.set("service", new CanvasService(createD1Store(c.env.DB, { region })));
     // The Worker serves image bytes itself and never makes a signed URL, so this secret signs nothing. It must exist, and it is new each time.
     c.set("blobs", createR2Blobs(c.env.IMAGES, { region, urlBase: new URL(c.req.url).origin, urlSecret: `${crypto.randomUUID()}${crypto.randomUUID()}` }));
     await next();
+  });
+
+  // Who the token stands for. A live client reads its actor here, so it never claims one.
+  api.get("/me", (c) => c.json({ actor: c.var.actor.id, kind: c.var.actor.kind, role: c.var.role }));
+
+  // The live room. The token sets the actor, the kind, and the role. The room opens only for a board that exists.
+  // A viewer joins and reads, and the room drops its writes.
+  api.get("/boards/:id/ws", async (c) => {
+    if (!options.live) return fail("NOT_FOUND", "this server hosts no live rooms", 404);
+    if (c.req.header("upgrade") !== "websocket") return fail("UPGRADE_REQUIRED", "open this route as a WebSocket", 426);
+    const id = c.req.param("id");
+    await c.var.service.assertExists(id);
+    const { actor, role } = c.var;
+    return options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
   });
 
   api.post("/boards", async (c) => {

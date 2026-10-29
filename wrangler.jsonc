@@ -10,10 +10,13 @@
   // Set CANVAS_REGION ("eu" or "us") for each deploy, for example with --var. It is the region the
   // database and the bucket live in. A real D1 confirms it on each query. Local `wrangler dev` needs "unknown". No default is set here.
   "name": "agentic-canvas",
-  "main": "src/worker.ts",
+  "main": "src/live-worker.ts",
   "compatibility_date": "2026-01-01",
   // The root of agentic-identity imports node:module for its version string.
   "compatibility_flags": ["nodejs_compat"],
+  // The live rooms. One Durable Object holds one board.
+  "durable_objects": { "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
   "d1_databases": [{ "binding": "DB", "database_name": "agentic-canvas", "database_id": "00000000-0000-0000-0000-000000000000" }],
   "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "agentic-canvas-images", "jurisdiction": "eu" }]
 }

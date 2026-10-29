@@ -54,6 +54,12 @@ export class CanvasService {
     });
   }
 
+  /** Throws NOT_FOUND unless the board exists. A live room opens only for a board that exists. */
+  async assertExists(id: string): Promise<void> {
+    boardKey(id);
+    if (!(await this.store.transaction((tx) => tx.get(COLLECTION, id)))) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
+  }
+
   async read(id: string): Promise<BoardData & { id: string }> {
     boardKey(id);
     return this.store.transaction(async (tx) => ({ id, ...readBoard(await this.load(tx.get(COLLECTION, id), id)) }));
