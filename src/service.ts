@@ -127,6 +127,9 @@ export class CanvasService {
       } catch {
         throw new CanvasError("INVALID", "the update is not a Yjs update");
       }
+      // A root type other than the two a board uses would be stored and sent back to every client for ever.
+      const strange = [...next.doc.share.keys()].filter((key) => key !== "elements" && key !== "meta");
+      if (strange.length > 0) throw new CanvasError("INVALID", "the update holds data that is not part of a board");
       const fixed = new Set([...next.restamp(prior, trusted), ...next.repair()]);
       await tx.put(COLLECTION, id, { update: toBase64(next.encode()) });
       return { elements: next.list().length, fixed: [...fixed].sort() };

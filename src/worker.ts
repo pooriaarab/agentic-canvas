@@ -200,7 +200,8 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   api.get("/boards/:id/state", async (c) => c.body(new Uint8Array(await c.var.service.state(c.req.param("id"))), 200, { "content-type": "application/octet-stream" }));
   api.post("/boards/:id/checkpoint", async (c) => {
     const id = c.req.param("id");
-    await c.var.service.assertExists(id); // no room is made for a board that does not exist
+    // Ask the room who wrote only for a board that exists. The room would make a Durable Object for any id.
+    await c.var.service.assertExists(id);
     const update = await readLimited(c.req.raw, MAX_LIVE_BYTES);
     if (!update) throw new CanvasError("INVALID", `the update must be at most ${MAX_LIVE_BYTES} bytes`);
     const room = options.live?.(c.env);

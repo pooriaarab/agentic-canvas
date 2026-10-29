@@ -253,34 +253,46 @@ export class Board {
   /**
    * Make the author stamps of a merged board honest. `prior` is the board before the merge, and `trusted`
    * says whether a principal really wrote in this session. A new element stamped by anyone else is deleted.
-   * On an old element the author never changes, and an edit stamped by an untrusted principal gets the stamp
-   * of the prior edit back. A title stamped by an untrusted principal gets the prior title back.
-   * Returns the ids it deleted or restored.
+   * On an old element the author never changes. A changed element must carry the stamp of a trusted editor,
+   * or it goes back to its prior state. A stamp changed alone is put back. The title follows the same rule,
+   * and meta keys other than the title and its stamp are deleted. Returns the ids it deleted or restored.
    */
   restamp(prior: Board, trusted: (who: Principal) => boolean): string[] {
     const before = new Map(prior.allStored().map((e) => [e.id, e]));
+    const body = ({ author: _a, editedBy: _e, ...rest }: CanvasElement) => JSON.stringify(rest);
     const fixed: string[] = [];
     this.doc.transact(() => {
       for (const el of this.allStored()) {
         const old = before.get(el.id);
-        const entry = this.elements.get(el.id)!;
         if (!old) {
           if (trusted(el.author) && trusted(el.editedBy)) continue;
           this.elements.delete(el.id);
         } else {
+          const entry = this.elements.get(el.id)!;
           const authorKept = samePrincipal(el.author, old.author);
-          if (authorKept && (trusted(el.editedBy) || samePrincipal(el.editedBy, old.editedBy))) continue;
-          if (!authorKept) entry.set("author", old.author);
-          if (!trusted(el.editedBy)) entry.set("editedBy", old.editedBy);
+          const editorOk = trusted(el.editedBy) || samePrincipal(el.editedBy, old.editedBy);
+          const changed = body(el) !== body(old);
+          if (authorKept && editorOk && !(changed && !trusted(el.editedBy))) continue;
+          if (changed && !trusted(el.editedBy)) this.elements.set(el.id, new Y.Map(Object.entries(old).filter(([, v]) => v !== undefined)));
+          else {
+            if (!authorKept) entry.set("author", old.author);
+            if (!editorOk) entry.set("editedBy", old.editedBy);
+          }
         }
         fixed.push(el.id);
       }
       const by = this.titleBy;
-      if (by && !trusted(by) && !(prior.titleBy && samePrincipal(by, prior.titleBy))) {
+      const stampKept = by && prior.titleBy ? samePrincipal(by, prior.titleBy) : by === prior.titleBy;
+      if (!(by && trusted(by)) && (this.title !== prior.title || !stampKept)) {
         if (prior.titleBy) this.meta.set("titleBy", prior.titleBy);
         else this.meta.delete("titleBy");
         this.meta.set("title", prior.title);
         fixed.push("title");
+      }
+      for (const key of [...this.meta.keys()]) {
+        if (key === "title" || key === "titleBy") continue;
+        this.meta.delete(key);
+        fixed.push(`meta:${key}`);
       }
     });
     return fixed;

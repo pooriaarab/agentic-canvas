@@ -36,7 +36,9 @@ describe("owner repair actor", () => {
 //  4. An honest edit by a principal the room saw is kept, with the author kind unchanged.
 //  5. A checkpoint merges: a shape that an HTTP writer added after the room began is not lost.
 //  6. A garbage update is INVALID and the board is unchanged. An unknown board is NOT_FOUND.
-//  7. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
+//  7. A client changes the content of an old element or the title and leaves the stamp as it was: the change is undone.
+//  8. A client adds a root type or a meta key of its own: a root is refused, a key is deleted.
+//  9. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
 describe("live checkpoint", () => {
   const bot: Principal = { kind: "agent_of_human", id: "helper" };
   const eve: Principal = { kind: "human", id: "eve" };
@@ -95,6 +97,29 @@ describe("live checkpoint", () => {
     expect(nodes.map((n) => n.id).sort()).toEqual(["s1", "s2", "s3"]);
     expect(nodes.find((n) => n.id === "s2")).toMatchObject({ author: bot, machineMade: true });
     expect(nodes.find((n) => n.id === "s1")).toMatchObject({ x: 3, author: human, editedBy: bot, machineMade: false, lastEditMachineMade: true });
+  });
+
+  test("a content change that keeps the old stamp is undone, for an element and for the title", async () => {
+    const service = await open();
+    const update = await room(service, (b) => {
+      const entry = b.doc.getMap<Y.Map<unknown>>("elements").get("s1")!;
+      entry.set("x", 500);
+      entry.set("text", "by the bot");
+      b.doc.getMap("meta").set("title", "Changed");
+    });
+    const result = await service.checkpoint("b", update, bot, [bot]);
+    expect(result.fixed).toEqual(["s1", "title"]);
+    const read = await service.read("b");
+    expect(read.title).toBe("Plan");
+    expect(read.nodes[0]).toMatchObject({ x: 0, text: "", editedBy: human, lastEditMachineMade: false });
+  });
+
+  test("an extra root type is refused and an extra meta key is deleted", async () => {
+    const service = await open();
+    const strange = await room(service, (b) => void b.doc.getText("junk").insert(0, "x".repeat(100)));
+    await expect(service.checkpoint("b", strange, bot, [bot])).rejects.toMatchObject({ code: "INVALID" });
+    const key = await room(service, (b) => b.doc.getMap("meta").set("junk", "x"));
+    expect((await service.checkpoint("b", key, bot, [bot])).fixed).toEqual(["meta:junk"]);
   });
 
   test("a garbage update is INVALID, an unknown board is NOT_FOUND, and a connector on a deleted shape goes too", async () => {
