@@ -29,19 +29,12 @@ describe("owner repair actor", () => {
   });
 });
 
-// Failure-mode list for the live checkpoint, written before `checkpoint` and `restamp`.
-//  1. A client writes raw Yjs and stamps a new element with a human it is not: the element is deleted.
-//  2. A client changes the author of an old element, or the editor to a principal the room never saw: the stamp is put back.
-//  3. A client stamps the title with someone else: the prior title and stamp come back.
-//  4. An honest edit by a principal the room saw is kept, with the author kind unchanged.
-//  5. A checkpoint merges: a shape that an HTTP writer added after the room began is not lost.
-//  6. A garbage update is INVALID and the board is unchanged. An unknown board is NOT_FOUND.
-//  7. A client changes the content of an old element or the title and leaves the stamp as it was: the change is undone.
-//  8. A client adds a root type or a meta key of its own: a root is refused, a key is deleted.
-//  9. A client adds a key of its own to an element: the key is deleted, on an old element and on a new trusted one.
-// 10. A client writes a title or a title stamp that fails its check, with a trusted stamp or on a board with no title: it is undone.
-// 11. A client sends the second half of an edit, so Yjs keeps it pending and no check sees it: refused, and the board does not grow.
-// 12. A connector whose shape was deleted by the checks goes too, and a board over the cap is refused.
+// Failure-mode list for the live checkpoint, written before `checkpoint` and `restamp`. A save must undo:
+//  1. A new element, or a title, stamped by a principal the room never saw.
+//  2. A changed author, a forged editor, or a content change that keeps an old stamp.
+//  3. Data no check reads: an unknown element key, a meta key, a root type, a title that fails its check,
+//     and an update that lacks its earlier part. Each would grow the stored board.
+//  And it must keep an honest edit, merge with an HTTP write made meanwhile, and answer garbage with INVALID.
 describe("live checkpoint", () => {
   const bot: Principal = { kind: "agent_of_human", id: "helper" };
   const eve: Principal = { kind: "human", id: "eve" };

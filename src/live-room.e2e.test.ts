@@ -2,12 +2,10 @@
 //
 // Failure cases, written before the Worker:
 //  1. A room opens for a board that does not exist, or without a valid token.
-//  2. A viewer token writes to a board, over HTTP or in the room.
-//  3. A token with a role the Worker does not know is let in as an editor.
-//  4. Two clients in one room do not converge.
-//  5. A peer's kind comes from its token, never from the client.
-//  6. A room is not saved to the board, or a save keeps an element a client stamped with a person it is not.
-//  7. A viewer saves a room.
+//  2. A viewer writes to a board, or a token with an unknown role gets in as an editor.
+//  3. Two clients in one room do not converge.
+//  4. A peer's kind comes from its token, never from the client.
+//  5. A room is not saved to the board, a save keeps an element stamped with a person who never wrote, or a viewer saves.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,12 +61,10 @@ describe("live room", () => {
     worker = await startWorker({ port: PORT, persistTo, vars: OPEN });
     expect((await call("/boards", HUMAN, { method: "POST", body: JSON.stringify({ id: "b1" }) })).status).toBe(201);
 
-    // Who the token stands for.
     expect(await (await call("/me", BOT)).json()).toEqual({ actor: "helper", kind: "agent_of_human", role: "editor" });
     expect((await call("/me", BAD_ROLE)).status).toBe(401);
     expect((await call("/me", null)).status).toBe(401);
 
-    // A viewer cannot write over HTTP.
     expect((await call("/boards/b1/shapes", VIEWER, { method: "POST", body: JSON.stringify({ type: "rect", x: 0, y: 0 }) })).status).toBe(403);
 
     // No room for a missing board, a bad id, or a bad token.

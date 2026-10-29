@@ -1,7 +1,5 @@
-// Failure cases for the token table, written before the role was read:
-//  1. A role that is not exactly "editor" or "viewer" is let in: null, a number, "Viewer", "owner", "".
-//  2. A missing role becomes anything but editor.
-//  3. A short token or a missing kind gets in with a role.
+// Failure cases for the token table, written before the role was read: a role that is not exactly "editor" or
+// "viewer" gets in, a missing role is not editor, or a grant with no kind gets in.
 import { describe, expect, test } from "vitest";
 import { authenticate } from "./worker.js";
 

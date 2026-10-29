@@ -196,7 +196,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
   });
 
-  // A live room reads its start state here and saves its state back. These are sync plumbing, not board commands.
+  // A client reads the start state of a room here, applies it to the room, and saves the room back. These are sync plumbing, not board commands.
   api.get("/boards/:id/state", async (c) => c.body(new Uint8Array(await c.var.service.state(c.req.param("id"))), 200, { "content-type": "application/octet-stream" }));
   api.post("/boards/:id/checkpoint", async (c) => {
     const id = c.req.param("id");

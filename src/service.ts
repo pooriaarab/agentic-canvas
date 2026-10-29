@@ -102,7 +102,7 @@ export class CanvasService {
     return this.store.transaction(async (tx) => toSvg(await this.load(tx.get(COLLECTION, id), id)));
   }
 
-  /** The stored board as a Yjs update. A live room starts from it. */
+  /** The stored board as a Yjs update. A client applies it to a room to seed it: the room does not read it. */
   async state(id: string): Promise<Uint8Array> {
     boardKey(id);
     return this.store.transaction(async (tx) => (await this.load(tx.get(COLLECTION, id), id)).encode());
