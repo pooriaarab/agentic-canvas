@@ -264,6 +264,7 @@ export const canvasAccount: CanvasAccount = {
         total.grants += 1;
         continue;
       }
+      // A direct delete, so no revoke audit row is written: an erase leaves no new entry about the subject.
       await store.delete("grants", g.grantId);
       total.grants += 1;
     }

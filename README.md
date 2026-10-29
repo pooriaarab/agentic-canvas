@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.12.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.13.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
@@ -288,7 +288,7 @@ What it does:
 
 - Lists boards, makes a board, and opens one. Empty, loading, and error states have a retry.
 - Draws shapes, connectors, text, and sticky notes. Select, move, resize, connect, and delete an
-  item. Pan by dragging the background, zoom with the wheel or the toolbar.
+  item. Pan by dragging the background, zoom with the wheel or the zoom controls on the canvas.
 - Marks an item an agent wrote with an "Agent" tag and in its accessible name. The side panel shows
   who made the item and who last edited it.
 - Shows who is in the board, from the live room (`agentic-realtime`). Edits go over the HTTP API.

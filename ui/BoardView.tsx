@@ -207,7 +207,7 @@ export function BoardView({ id, client: remote, host, room: roomOptions, me, bac
   const remove = (target: string) => {
     setSelected(null);
     write(() => client.remove(id, target), "Could not delete the item");
-    canvasBox.current?.querySelector<HTMLElement>("[role=group]")?.focus();
+    canvasBox.current?.querySelector<HTMLElement>(".canvas")?.focus();
   };
   const add = (type: ShapeType) => {
     const [w, h] = DEFAULT_SIZE[type];
@@ -235,31 +235,41 @@ export function BoardView({ id, client: remote, host, room: roomOptions, me, bac
   return (
     <section className="board" aria-labelledby="board-h">
       <div className="row">
-        <h1 id="board-h">{d.title || d.id}</h1>
+        <div className="heading">
+          <h1 id="board-h">{d.title || d.id}</h1>
+          <p className="note" role="status">{editable ? status : ""}</p>
+        </div>
         <PresenceStack entries={[{ id: "me", name: me.actor, kind: me.kind === "human" ? "person" : "agent" }, ...peers]} label={live ? "In this board" : "In this board (not live)"} />
       </div>
-      <Toolbar label="Board tools">
-        {TOOLS.map((t) => (
-          <ToolbarButton key={t.type} label={t.text} icon={t.icon} disabled={!editable} onClick={() => add(t.type)} />
-        ))}
-        <ToolbarSeparator />
-        <ToolbarButton label="Zoom out" icon={icon(<path d="M4 10h12" />)} onClick={() => zoom(1 / 1.25)} />
-        <ToolbarButton label="Zoom in" icon={icon(<path d="M4 10h12M10 4v12" />)} onClick={() => zoom(1.25)} />
-        <ToolbarButton label="Pan left" icon={icon(<path d="M12 4l-6 6 6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x + PAN_STEP }))} />
-        <ToolbarButton label="Pan right" icon={icon(<path d="M8 4l6 6-6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x - PAN_STEP }))} />
-        <ToolbarButton label="Pan up" icon={icon(<path d="M4 12l6-6 6 6" />)} onClick={() => setView((v) => ({ ...v, y: v.y + PAN_STEP }))} />
-        <ToolbarButton label="Pan down" icon={icon(<path d="M4 8l6 6 6-6" />)} onClick={() => setView((v) => ({ ...v, y: v.y - PAN_STEP }))} />
-        <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView(HOME)} />
-      </Toolbar>
-      <p className="note" role="status">{editable ? status : ""}</p>
       {!editable && <p className="note">{host ? "This board is read only." : "This token can read the board but not change it."}</p>}
-      <div className="stage" ref={canvasBox}>
-        <Canvas data={d} selected={selected} editable={editable} view={view} onView={setView} onSelect={setSelected} onMove={move} onResize={resize} onDelete={remove} />
-        {empty && (
-          <div className="empty-overlay">
-            <EmptyState title="This board is empty" description={editable ? "Add a shape or a note with the tools above." : "Nothing has been drawn yet."} />
+      <div className="stage">
+        <div className="surface" ref={canvasBox}>
+          <div className="palette">
+            <Toolbar label="Shape palette">
+              {TOOLS.map((t) => (
+                <ToolbarButton key={t.type} label={t.text} icon={t.icon} disabled={!editable} onClick={() => add(t.type)} />
+              ))}
+            </Toolbar>
           </div>
-        )}
+          <div className="zoom">
+            <Toolbar label="Zoom and pan">
+              <ToolbarButton label="Zoom out" icon={icon(<path d="M4 10h12" />)} onClick={() => zoom(1 / 1.25)} />
+              <ToolbarButton label="Zoom in" icon={icon(<path d="M4 10h12M10 4v12" />)} onClick={() => zoom(1.25)} />
+              <ToolbarSeparator />
+              <ToolbarButton label="Pan left" icon={icon(<path d="M12 4l-6 6 6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x + PAN_STEP }))} />
+              <ToolbarButton label="Pan right" icon={icon(<path d="M8 4l6 6-6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x - PAN_STEP }))} />
+              <ToolbarButton label="Pan up" icon={icon(<path d="M4 12l6-6 6 6" />)} onClick={() => setView((v) => ({ ...v, y: v.y + PAN_STEP }))} />
+              <ToolbarButton label="Pan down" icon={icon(<path d="M4 8l6 6 6-6" />)} onClick={() => setView((v) => ({ ...v, y: v.y - PAN_STEP }))} />
+              <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView(HOME)} />
+            </Toolbar>
+          </div>
+          <Canvas data={d} selected={selected} editable={editable} view={view} onView={setView} onSelect={setSelected} onMove={move} onResize={resize} onDelete={remove} />
+          {empty && (
+            <div className="empty-overlay">
+              <EmptyState title="This board is empty" description={editable ? "Pick a shape from the palette to start." : "Nothing has been drawn yet."} />
+            </div>
+          )}
+        </div>
         <Inspector key={item?.id ?? "none"} item={item} nodes={d.nodes} editable={editable} onText={(text) => item && write(() => client.update(id, item.id, { text }), "Could not save the text")} onPlace={place} onDelete={remove} onConnect={(to) => item && write(() => client.addConnector(id, { from: { id: item.id }, to: { id: to } }), "Could not connect")} />
       </div>
     </section>

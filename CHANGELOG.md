@@ -1,10 +1,24 @@
 # Changelog
 
-## 0.12.0
+## 0.13.0
 
 **Added**
 
 - `agentic-canvas/account`: `canvasAccount` has `exportAccount(subject, { store, saveRoom?, eraseRoom? })` and `eraseAccount(subject, { store, saveRoom?, eraseRoom? })`, so a host runs a person's data export and erase without reading the storage layout. The shape is provisional, as in other agentic packages: it is the `AccountPackage` contract that a later `agentic-identity` release adds.
+
+## 0.12.1 - 2026-10-29
+
+**Changed**
+
+- Depend on `agentic-identity` 0.9 (was 0.8).
+- Depend on `agentic-realtime` 0.4.4 (was 0.4.2). Realtime now depends on `agentic-identity` 0.9 too, so the package has one copy of it.
+
+## 0.12.0
+
+**Changed**
+
+- A calmer board look, with `agentic-design` ^0.5.0 (was ^0.4.0). The shape palette and the zoom controls float on the canvas as two small toolbars. The canvas has a soft dot grid and a large radius. Shapes and connectors have thinner lines. The save status sits under the title. The empty state is centered on the canvas. The look follows Tiny Little Office (https://tinylittleoffice.com, MIT). No code is copied.
+- The toolbar named "Board tools" is now two toolbars: "Shape palette" and "Zoom and pan".
 
 ## 0.11.0
 
