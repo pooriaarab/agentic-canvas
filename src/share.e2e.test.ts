@@ -150,6 +150,7 @@ describe("the typed client", () => {
     expect(odd.links.map((l) => l.id).sort()).toEqual(["bad-revoked", "null-expiry"]);
     expect(odd.links.find((l) => l.id === "null-expiry")).toEqual({ id: "null-expiry", role: "viewer", signedInOnly: false });
     expect(odd.skipped).toBe(4);
+    expect(odd.links.find((l) => l.id === "bad-revoked")!.revokedAt).toBe(0);
     expect((await ada.links("l-board")).truncated).toBeUndefined();
   });
 
@@ -292,8 +293,10 @@ describe("the MCP server", () => {
       expect((await call(c, "list_links", { board: "mcp-link" })).value.links[0].revokedAt).toEqual(expect.any(Number));
       const missing = await call(c, "revoke_link", { board: "mcp-link", link: "nope" });
       expect([missing.error, missing.value.code]).toEqual([true, "NOT_FOUND"]);
-      const bad = (await c.callTool({ name: "create_link", arguments: { board: "mcp-link", role: "owner" } })) as { isError?: boolean };
-      expect(bad.isError).toBe(true);
+      for (const args of [{ role: "owner" }, { role: "viewer", expiresInMs: 1.5 }, { role: "viewer", expiresInMs: -1 }]) {
+        const bad = (await c.callTool({ name: "create_link", arguments: { board: "mcp-link", ...args } })) as { isError?: boolean };
+        expect(bad.isError).toBe(true);
+      }
     } finally {
       await c.close();
     }

@@ -65,6 +65,7 @@ export interface BoardLink {
   role: Exclude<BoardRole, "owner">;
   signedInOnly: boolean;
   expiresAt?: number;
+  /** Set once the link is revoked. Test it with `!== undefined`: a damaged record shows as 0, and 0 is falsy. */
   revokedAt?: number;
 }
 
