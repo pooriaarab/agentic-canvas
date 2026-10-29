@@ -1,5 +1,6 @@
 import { createSharing, EraseRefusedError, hasScope, ROLES, SUBJECT_KINDS, type Action, type Grant, type InviteSummary, type PrincipalContext, type Role, type Store, type Subject } from "agentic-identity";
 import { CanvasError } from "./core/board.js";
+import { isBoardId, isStoreId } from "./service.js";
 
 /** The identity resource type of a board. Scopes read `canvas:<action>`. */
 export const RESOURCE_TYPE = "canvas";
@@ -22,6 +23,10 @@ function refuse(error: unknown): never {
 const oneOf = <T extends string>(value: unknown, list: readonly T[], name: string): T => {
   if (typeof value !== "string" || !(list as readonly string[]).includes(value)) throw new CanvasError("INVALID", `${name} must be one of: ${list.join(", ")}`);
   return value as T;
+};
+const storeId = (value: unknown, name: string): string => {
+  if (typeof value !== "string" || !isStoreId(value)) throw new CanvasError("INVALID", `${name} must be 1 to 128 of A-Z, a-z, 0-9, _ and -, and not like __x__`);
+  return value;
 };
 const word = (value: unknown, name: string): string => {
   if (typeof value !== "string" || value === "") throw new CanvasError("INVALID", `${name} must be a non-empty string`);
@@ -48,6 +53,11 @@ export class CanvasAccess {
     this.now = options.now ?? Date.now;
   }
 
+  /** A board id that the Store refuses names no board. The gate checks this for a role holder: a token of the dev list skips the gate. */
+  private known(id: string): void {
+    if (!isBoardId(id)) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
+  }
+
   /** Make the actor the owner of a new board. */
   async register(ctx: PrincipalContext, id: string): Promise<void> {
     await this.sharing.createResource(ctx, { id, type: RESOURCE_TYPE }).catch((error: unknown) => {
@@ -65,6 +75,8 @@ export class CanvasAccess {
 
   /** True if the board has sharing records: it was made by an identity credential. */
   async registered(id: string): Promise<boolean> {
+    // The Store refuses some ids, and a refusal is a 500. An id it would refuse names no board.
+    if (!isBoardId(id)) return false;
     return (await this.store.get("resources", id))?.type === RESOURCE_TYPE;
   }
 
@@ -103,24 +115,28 @@ export class CanvasAccess {
   }
 
   async grant(ctx: PrincipalContext, id: string, input: { subjectKind?: unknown; subjectId?: unknown; role?: unknown }): Promise<{ ok: true }> {
-    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: word(input.subjectId, "subjectId") };
+    this.known(id);
+    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: storeId(input.subjectId, "subjectId") };
     await this.sharing.grant(ctx, id, subject, oneOf(input.role, ROLES, "role")).catch(refuse);
     return { ok: true };
   }
 
   async revoke(ctx: PrincipalContext, id: string, input: { subjectKind?: unknown; subjectId?: unknown }): Promise<{ ok: true }> {
-    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: word(input.subjectId, "subjectId") };
+    this.known(id);
+    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: storeId(input.subjectId, "subjectId") };
     await this.sharing.revokeGrant(ctx, id, subject).catch(refuse);
     return { ok: true };
   }
 
   /** The grants and the invites on a board. An invite never shows its email. Links are not listed: a token shows once. */
   async list(ctx: PrincipalContext, id: string): Promise<{ grants: Grant[]; invites: InviteSummary[] }> {
+    this.known(id);
     const [grants, invites] = await Promise.all([this.sharing.listGrants(ctx, id, { limit: 200 }), this.sharing.listInvites(ctx, id, { limit: 200 })]).catch(refuse);
     return { grants: grants.grants, invites: invites.invites };
   }
 
   async invite(ctx: PrincipalContext, id: string, input: { role?: unknown; email?: unknown; handle?: unknown; expiresInMs?: unknown }): Promise<{ id: string }> {
+    this.known(id);
     const role = oneOf(input.role, SHARE_ROLES, "role");
     const expiresInMs = lifetime(input.expiresInMs, "expiresInMs");
     const who = input.email !== undefined ? { email: word(input.email, "email") } : input.handle !== undefined ? { handle: word(input.handle, "handle") } : {};
@@ -130,6 +146,7 @@ export class CanvasAccess {
 
   /** The email comes from a verified sign-in and the handle from the agent's own record, never from the request. */
   async accept(ctx: PrincipalContext, inviteId: string): Promise<{ ok: true }> {
+    if (!isStoreId(inviteId)) throw new CanvasError("FORBIDDEN", "you may not do this on this board");
     const user = await this.store.get("users", ctx.principalId);
     const agent = await this.store.get("principals", ctx.principalId);
     const identity = {
@@ -142,6 +159,7 @@ export class CanvasAccess {
 
   /** The token shows once. Only its hash is stored. */
   async createLink(ctx: PrincipalContext, id: string, input: { role?: unknown; signedInOnly?: unknown; expiresInMs?: unknown }): Promise<{ id: string; token: string }> {
+    this.known(id);
     const role = oneOf(input.role, SHARE_ROLES, "role");
     const expiresInMs = lifetime(input.expiresInMs, "expiresInMs");
     if (input.signedInOnly !== undefined && typeof input.signedInOnly !== "boolean") throw new CanvasError("INVALID", "signedInOnly must be true or false");
@@ -150,7 +168,8 @@ export class CanvasAccess {
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */
   async revokeLink(ctx: PrincipalContext, id: string, linkId: string): Promise<{ ok: true }> {
-    const link = await this.store.get("links", linkId);
+    this.known(id);
+    const link = isStoreId(linkId) ? await this.store.get("links", linkId) : null;
     if (!link || link.resourceId !== id) throw new CanvasError("NOT_FOUND", "no such link on this board");
     await this.sharing.revokeLink(ctx, linkId).catch(refuse);
     return { ok: true };

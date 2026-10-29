@@ -35,6 +35,26 @@ function boardKey(id: string): string {
   return id;
 }
 
+/** True if the store accepts `id` as the id of an invite or a link: 1 to 128 safe characters, and not an id the store reserves. */
+export function isStoreId(id: string): boolean {
+  try {
+    assertId(id);
+    return /^[A-Za-z0-9_-]{1,128}$/.test(id);
+  } catch {
+    return false;
+  }
+}
+
+/** True if the store accepts `id` as a board id. A caller's id that fails this names no board. */
+export function isBoardId(id: string): boolean {
+  try {
+    boardKey(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Give a store failure the code a caller can act on. Other errors pass through. */
 function storeFailure(error: unknown): never {
   if (error instanceof StoreConflictError) throw new CanvasError("UNAVAILABLE", "the board changed at the same time. Try again");

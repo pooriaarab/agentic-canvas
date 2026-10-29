@@ -355,3 +355,32 @@ describe("live rooms", () => {
     expect((await call(tokens.dee!, "GET", "/boards/lv/%E0%A4%A")).status).toBe(403);
   });
 });
+
+describe("ids the Store would refuse", () => {
+  // A board id, a link id, or an invite id that the Store refuses must not end as a 500.
+  test.each(["a%2Fb", "__x__", "a%20b", "x".repeat(65)])("board id %s is 404 on every route", async (id) => {
+    for (const [method, path] of [["GET", `/boards/${id}`], ["DELETE", `/boards/${id}`], ["GET", `/boards/${id}/access`], ["POST", `/boards/${id}/links`], ["DELETE", `/boards/${id}/grants?subjectKind=human&subjectId=bob`]] as const) {
+      expect([path, (await call(tokens.ada!, method, path, method === "POST" ? { role: "viewer" } : undefined)).status]).toEqual([path, 404]);
+    }
+  });
+
+  test.each(["a/b", "__x__", "a b", "x".repeat(129)])("link id $0 is 404, and invite id $0 is 403", async (id) => {
+    expect((await call(tokens.ada!, "DELETE", `/boards/lv/links/${encodeURIComponent(id)}`)).status).toBe(404);
+    expect((await call(tokens.ada!, "POST", "/invites/accept", { id })).status).toBe(403);
+  });
+});
+
+describe("ids the Store refuses, for a subject and for the dev list", () => {
+  test.each(["__x__", "a/b", "a b"])("subject id %s is 422", async (subjectId) => {
+    expect((await grant("ada", "lv", subjectId, "viewer")).status).toBe(422);
+    expect((await call(tokens.ada!, "DELETE", `/boards/lv/grants?subjectKind=human&subjectId=${encodeURIComponent(subjectId)}`)).status).toBe(422);
+  });
+
+  test("a token of the dev list gets 404 on a board id the Store refuses, on every sharing route", async () => {
+    const dev = "d".repeat(40);
+    const vars = { CANVAS_UNSAFE_STATIC_TOKENS: "1", CANVAS_API_TOKENS: JSON.stringify({ [dev]: { actor: "dev", kind: "human" } }) };
+    for (const [method, path, body] of [["GET", "/boards/__x__/access"], ["POST", "/boards/__x__/grants", { subjectKind: "human", subjectId: "bob", role: "viewer" }], ["DELETE", "/boards/__x__/grants?subjectKind=human&subjectId=bob"], ["POST", "/boards/__x__/invites", { role: "viewer", handle: "robo" }], ["POST", "/boards/__x__/links", { role: "viewer" }], ["DELETE", "/boards/__x__/links/abc"]] as const) {
+      expect([path, (await call(dev, method, path, body, {}, vars)).status]).toEqual([path, 404]);
+    }
+  });
+});
