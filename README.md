@@ -115,7 +115,7 @@ the direction. Lines that start with `#` or `//` are comments.
   checks author stamps: a client cannot put another author on its work.
 - The SDK joins a room: `import { LiveBoard, LiveService } from "agentic-canvas/live"`. The CLI and the MCP
   server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
-  `CANVAS_ACTOR` is not needed. `--dir` and `repair` stay local.
+  `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model is plain TypeScript on Yjs, with no outbound calls.
 

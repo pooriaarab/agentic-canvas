@@ -53,11 +53,13 @@ async function until(done: () => boolean, what: string): Promise<void> {
 }
 
 describe("live CLI and MCP", () => {
-  test("refuse a bad setup before they touch the server", async () => {
+  test("refuse a bad setup, and a token the server does not know", async () => {
     worker = await startWorker({ port: PORT, persistTo, vars });
     const base = ["add", "b0", "--type", "rect", "--x", "0", "--y", "0"];
     expect(await cli(base, env(undefined))).toMatchObject({ code: 2, err: expect.stringContaining("CANVAS_TOKEN") });
     expect(await cli(["--dir", "x", ...base], env(HUMAN))).toMatchObject({ code: 2, err: expect.stringContaining("--dir") });
+    expect(await cli(base, env(HUMAN, { CANVAS_DIR: "x" }))).toMatchObject({ code: 2, err: expect.stringContaining("CANVAS_DIR") });
+    expect(await cli(["read", "b0"], env(HUMAN, { CANVAS_ACTOR: "human:mallory" }))).toMatchObject({ code: 2, err: expect.stringContaining("does not match") });
     expect(await cli(base, env(HUMAN, { CANVAS_ACTOR: "human:mallory" }))).toMatchObject({ code: 2, err: expect.stringContaining("does not match") });
     expect(await cli(["repair", "b0"], env(HUMAN))).toMatchObject({ code: 2, err: expect.stringContaining("local store only") });
     expect(await cli(["new", "--id", "b0"], env("x".repeat(40)))).toMatchObject({ code: 1, out: "", err: expect.stringContaining("FORBIDDEN") });
