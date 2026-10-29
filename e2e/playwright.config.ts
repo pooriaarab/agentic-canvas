@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-const PORT = 18900;
+const PORT = Number(process.env.E2E_PORT ?? 18900);
 export const TOKENS = {
   ada: "ada-human-token-".padEnd(40, "a"),
   bea: "bea-human-token-".padEnd(40, "b"),

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0
+
+**Added**
+
+- `host` option for `agentic-canvas/ui` (`mount`, `BoardEditor`): an app gives its own Yjs document, and optionally the presence and connection state of its room. The UI reads and writes that document as a board, redraws when it changes, and makes no HTTP call, no poll, and no live room. Writes carry the principal's id and kind. `client` is optional with `host`. A `client` or a `room` with `host`, or a principal id that fails the identity rule, throws a `TypeError`. The default client mode is unchanged.
+- `principal.id` option, the id stamped on each element written in host mode (default: `name`).
+
+**Fixed**
+
+- The board model no longer imports `node:crypto`, so the UI bundles for a browser.
+
 ## 0.10.0
 
 **Added**

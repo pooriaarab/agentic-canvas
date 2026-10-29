@@ -1,12 +1,15 @@
 import { Button, EmptyState, Input, PresenceChip, PresenceStack, Select, Textarea, Toolbar, ToolbarButton, ToolbarSeparator, useToast, type PresenceEntry } from "agentic-design/react";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { ShapeType } from "../src/core/board";
+import { Board } from "../src/core/board";
+import type { Principal } from "../src/core/principal";
 import type { BoardData, EdgeData, NodeData } from "../src/core/read";
 import type { CanvasClient } from "../src/client";
 import { describe, isApiError } from "./errors";
 import { Canvas, HOME, MAX_ZOOM, MIN_ZOOM, PAN_STEP, TYPE_NAME, byline, type View } from "./Canvas";
 import { Failure } from "./Failure";
-import { joinRoom, type Room, type RoomOptions } from "./presence";
+import { boardCalls, type BoardCalls, type HostBoard } from "./host";
+import { joinRoom, toEntry, type Room, type RoomOptions } from "./presence";
 
 type State = { state: "loading" } | { state: "error"; message: string; missing: boolean } | { state: "ready"; data: BoardData & { id: string } };
 type Item = NodeData | EdgeData;
@@ -25,15 +28,18 @@ const DEFAULT_TEXT: Record<string, string> = { rect: "Rectangle", ellipse: "Elli
 
 export interface BoardViewProps {
   id: string;
-  client: CanvasClient;
+  /** Loads and changes the board. Not used with `host`. */
+  client?: CanvasClient;
+  /** A board in the app's own Yjs document. The view then calls no client, does not poll, and opens no room. */
+  host?: HostBoard;
   /** The live room. Without one, the view shows no one else and reads the board by its timer only. */
   room?: RoomOptions;
-  me: { actor: string; kind: string; role: "editor" | "viewer" };
+  me: { actor: string; id?: string; kind: string; role: "editor" | "viewer" };
   /** A link for a missing board to go back to. */
   backHref?: string;
 }
 
-export function BoardView({ id, client, room: roomOptions, me, backHref }: BoardViewProps) {
+export function BoardView({ id, client: remote, host, room: roomOptions, me, backHref }: BoardViewProps) {
   const roomUrl = roomOptions?.baseUrl;
   const roomToken = roomOptions?.token;
   const toast = useToast();
@@ -47,6 +53,20 @@ export function BoardView({ id, client, room: roomOptions, me, backHref }: Board
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const canvasBox = useRef<HTMLDivElement>(null);
   const editable = me.role === "editor";
+  const hostDoc = host?.doc;
+  const hostPresence = host?.presence;
+  // The status functions are read when `doc` opens. A new inline function on `update()` does not open it again.
+  const hostRef = useRef(host);
+  hostRef.current = host;
+  // The calls of a host board are made on its document in this tab. The stamp is the principal's id and kind.
+  // The stamp is read at each write, so a new principal changes the stamp and does not reload the board.
+  const who = useRef<Principal>({ kind: me.kind as never, id: me.id ?? me.actor });
+  who.current = { kind: me.kind as never, id: me.id ?? me.actor };
+  const client: BoardCalls = useMemo(() => {
+    if (hostDoc) return boardCalls(new Board(hostDoc), () => who.current);
+    if (!remote) throw new TypeError("the board needs a client or a host board");
+    return remote;
+  }, [remote, hostDoc]);
 
   const [saving, setSaving] = useState(0);
   const pending = useRef(0);
@@ -72,7 +92,8 @@ export function BoardView({ id, client, room: roomOptions, me, backHref }: Board
    */
   const load = useCallback(async () => {
     if (pending.current > 0) return;
-    const wait = lastRead.current + 1000 - Date.now();
+    // A read of the app's own document is cheap and has no server to spare.
+    const wait = hostDoc ? 0 : lastRead.current + 1000 - Date.now();
     if (wait > 0) {
       clearTimeout(timer.current);
       timer.current = setTimeout(() => void load(), wait);
@@ -80,7 +101,7 @@ export function BoardView({ id, client, room: roomOptions, me, backHref }: Board
     }
     lastRead.current = Date.now();
     await read();
-  }, [read]);
+  }, [read, hostDoc]);
   useEffect(() => {
     setBoard({ state: "loading" });
     lastRead.current = 0;
@@ -94,17 +115,47 @@ export function BoardView({ id, client, room: roomOptions, me, backHref }: Board
     return () => window.removeEventListener("beforeunload", guard);
   }, [saving]);
 
+  // A change in the app's document, from anyone, draws again at once.
   useEffect(() => {
-    if (roomUrl === undefined || roomToken === undefined) return;
-    const joined = joinRoom({ board: id, baseUrl: roomUrl, token: roomToken, name: me.actor, onPeers: setPeers, onChange: () => void load(), onStatus: setLive });
+    if (!hostDoc) return;
+    // Only the board's own maps count: the app may keep other data in the same document.
+    const changed = () => void load();
+    const elements = hostDoc.getMap("elements");
+    const meta = hostDoc.getMap("meta");
+    elements.observeDeep(changed);
+    meta.observe(changed);
+    return () => (elements.unobserveDeep(changed), meta.unobserve(changed));
+  }, [hostDoc, load]);
+  useEffect(() => {
+    if (!hostPresence) return;
+    setPeers(hostPresence.peers.map(toEntry));
+    const off = hostPresence.onPeers((list) => setPeers(list.map(toEntry)));
+    return () => (off(), setPeers([]));
+  }, [hostPresence]);
+  useEffect(() => {
+    if (!hostDoc) return;
+    // Leaving host mode, or another host, must not leave this state behind.
+    const reset = () => setLive(false);
+    // With no way to ask or listen, the board is shown as live. With only a listener, it is not live until the room says so.
+    const { status: ask, onStatus: listen } = hostRef.current ?? {};
+    setLive(ask ? ask() === "connected" : !listen);
+    const stop = listen?.((next) => setLive(next === "connected"));
+    return () => (stop?.(), reset());
+  }, [hostDoc]);
+  useEffect(() => {
+    if (hostDoc || roomUrl === undefined || roomToken === undefined) return;
+    // A room that was left can still report its close. That report must not reach the next mode.
+    let left = false;
+    const joined = joinRoom({ board: id, baseUrl: roomUrl, token: roomToken, name: me.actor, onPeers: (list) => !left && setPeers(list), onChange: () => !left && void load(), onStatus: (up) => !left && setLive(up) });
     room.current = joined;
-    return () => (joined.leave(), (room.current = undefined));
-  }, [id, roomUrl, roomToken, me.actor, load]);
+    return () => ((left = true), joined.leave(), setPeers([]), (room.current = undefined));
+  }, [id, hostDoc, roomUrl, roomToken, me.actor, load]);
   // A change made outside this UI (the HTTP API, the CLI, an agent) raises no presence counter, so a slow refresh finds it.
   useEffect(() => {
+    if (hostDoc) return;
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, hostDoc]);
 
   /** Run one write after the one before it, then read the board again and tell the room. */
   const write = useCallback(
@@ -195,7 +246,7 @@ export function BoardView({ id, client, room: roomOptions, me, backHref }: Board
         <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView(HOME)} />
       </Toolbar>
       <p className="note" role="status">{editable ? status : ""}</p>
-      {!editable && <p className="note">This token can read the board but not change it.</p>}
+      {!editable && <p className="note">{host ? "This board is read only." : "This token can read the board but not change it."}</p>}
       <div className="stage" ref={canvasBox}>
         <Canvas data={d} selected={selected} editable={editable} view={view} onView={setView} onSelect={setSelected} onMove={move} onResize={resize} onDelete={remove} />
         {empty && (
