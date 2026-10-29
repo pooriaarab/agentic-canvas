@@ -130,6 +130,7 @@ describe("failures exit 1", () => {
     writeFileSync(join(dir, STORE_FILE), "{not json");
     const r = await cli(dir, ["read", "b"]);
     expect(r.code).toBe(1);
+    expect(r.err).toContain("INVALID: ");
     expect(r.err).toContain("not valid JSON");
     expect(r.err).not.toMatch(/\n\s+at /);
   });

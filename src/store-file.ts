@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { link, open, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { FileStoreError } from "./store-errors.js";
 import { assertCollection, assertId, createMemoryStore, parseRegion, StoreConflictError, type AdapterOptions, type Doc, type Query, type Store, type StoreOps } from "agentic-identity";
 
 /** The file as it sits in memory: collection, then id. A Map, so an id such as "constructor" is plain data. */
@@ -10,6 +11,8 @@ type Change = [collection: string, id: string, doc: Doc | null];
 
 const MAX_TRANSACTION_RUNS = 50;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+export { FileStoreError };
 
 export interface FileStoreOptions extends AdapterOptions {
   /** How long a write waits for the lock before it fails. Defaults to 10000. */
@@ -83,7 +86,7 @@ export function createFileStore(path: string, options: FileStoreOptions = {}): S
       );
     } catch {
       // Never replace a file that does not parse: that would erase data an operator may repair.
-      throw new Error(`the database file ${path} is not valid JSON. Repair or remove it`);
+      throw new FileStoreError("DAMAGED", `the database file is not valid JSON. Repair or remove it`);
     }
   }
 
@@ -140,7 +143,7 @@ export function createFileStore(path: string, options: FileStoreOptions = {}): S
         if (codeOf(error) !== "EEXIST") throw error;
       }
       await takeOverIfStale();
-      if (Date.now() > deadline) throw new Error(`the database file is locked. If no agentic-canvas process runs, remove ${lockPath}`);
+      if (Date.now() > deadline) throw new FileStoreError("LOCKED", `the database file is locked. If no agentic-canvas process runs, remove the .lock file next to it`);
       await sleep(5 + Math.random() * 15);
     }
   }

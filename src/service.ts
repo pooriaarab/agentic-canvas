@@ -1,10 +1,11 @@
-import { assertId, type Store } from "agentic-identity";
+import { assertId, StoreConflictError, type Store } from "agentic-identity";
 import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
 import { principalSchema, type Principal } from "./core/principal.js";
 import { readBoard, type BoardData } from "./core/read.js";
 import { toSvg } from "./core/svg.js";
 import { svgToPng } from "./png.js";
+import { FileStoreError } from "./store-errors.js";
 
 const COLLECTION = "boards";
 const BOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -28,9 +29,20 @@ function boardKey(id: string): string {
   return id;
 }
 
+/** Give a store failure the code a caller can act on. Other errors pass through. */
+function storeFailure(error: unknown): never {
+  if (error instanceof StoreConflictError) throw new CanvasError("UNAVAILABLE", "the board changed at the same time. Try again");
+  if (error instanceof FileStoreError) throw new CanvasError(error.code === "LOCKED" ? "UNAVAILABLE" : "INVALID", error.message);
+  throw error;
+}
+
 /** One place for every board operation. The CLI, the MCP server, and the Worker call it. */
 export class CanvasService {
-  constructor(private readonly store: Store) {}
+  private readonly store: Store;
+
+  constructor(store: Store) {
+    this.store = { ...store, transaction: (fn) => store.transaction(fn).catch(storeFailure) };
+  }
 
   async create(actor: Principal, options: { id?: string; title?: string } = {}): Promise<{ id: string; title: string }> {
     const id = boardKey(options.id ?? crypto.randomUUID());

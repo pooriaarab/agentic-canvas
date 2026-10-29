@@ -178,6 +178,7 @@ describe("tools", () => {
       const r = await call(client, "read_board", { board: "b" });
       expect(r.error).toBe(true);
       expect(JSON.stringify(r.value)).not.toMatch(/\n\s+at /);
+      expect(r.value).toMatchObject({ code: "INVALID" });
     } finally {
       await client.close();
     }
