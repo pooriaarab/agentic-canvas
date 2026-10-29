@@ -21,5 +21,5 @@ export { svgToPng } from "./png.js";
 export { ActorConfigError, operatorActor } from "./actor.js";
 export { createMcpServer, runMcp } from "./mcp.js";
 export { CanvasService } from "./service.js";
-export { fileStore } from "./store.js";
-export type { BoardStore, Doc, Json, StoreOps } from "./store.js";
+export { createFileStore, openLocalStore } from "./store-file.js";
+export type { FileStoreOptions } from "./store-file.js";

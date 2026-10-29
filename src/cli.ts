@@ -7,7 +7,7 @@ import { ActorConfigError, operatorActor } from "./actor.js";
 import type { Principal } from "./core/principal.js";
 import { runMcp } from "./mcp.js";
 import { CanvasService } from "./service.js";
-import { fileStore } from "./store.js";
+import { openLocalStore } from "./store-file.js";
 
 class UsageError extends Error {}
 
@@ -72,7 +72,7 @@ async function run(argv: string[]): Promise<void> {
       throw error;
     }
   };
-  const service = new CanvasService(fileStore(v.dir ?? process.env.CANVAS_DIR ?? ".agentic-canvas"));
+  const service = new CanvasService(openLocalStore(v.dir ?? process.env.CANVAS_DIR ?? ".agentic-canvas"));
   const print = (value: unknown): void => console.log(JSON.stringify(value));
   switch (command) {
     case "new":
