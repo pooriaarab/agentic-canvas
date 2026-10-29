@@ -1,21 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+**Breaking changes**
+
+- A live client needs a Worker of 0.4.0. The client no longer seeds a room. The Worker seeds the room from the stored board when a client connects. An older Worker does not seed it, so a new client joins an empty room. The Worker refuses a live join when it cannot seed the room, usually with `UNAVAILABLE`.
+- The Worker refuses the token actor `canvas-room` of kind `agent`. The Worker uses this actor to seed rooms. The Worker refuses a token that names it.
+- The Worker stamps authors on save. A save takes the author of a new element, the last editor of a changed one, and the title author from the room's log of who sent each update. The save corrects a wrong stamp and reports the element in `fixed`. The save deletes an element, or undoes a change, that it cannot name a writer for. A raw Yjs client cannot claim another principal or a person.
+- Depend on `agentic-realtime` 0.3 (was 0.1) and `agentic-identity` 0.5 (was 0.4).
+
+**Added**
 
 - Add a web UI served by the Worker, built on `agentic-design`: board list, canvas view, select, move, resize,
   delete, pan, zoom, live presence, and a marker on agent items. The browser joins the live room with the token
   as a WebSocket sub-protocol (`agentic-canvas.bearer`), because a browser cannot set a header on a socket.
-  Playwright E2E with axe checks run in `npm run ci:local`.
-- Stamp authors on the server. A save takes the author of a new element, the last editor of a changed one, and the
-  title author from the room's log of who sent each update, so a raw Yjs client cannot claim another principal or a
-  person. The stamp is corrected, not deleted, and the save reports the element in `fixed`. An element or a change
-  that no one can be named for is deleted or undone. A hand save stamps content the room never had with its poster.
-- Seed a live room from the stored board and save the room back to the Store in the Worker. A raw WebSocket client needs
-  no seed or checkpoint call, and room edits reach the Store before the next board read or write. The token table
-  refuses the actor `canvas-room` of kind `agent`, which the Worker uses to seed. Needs `agentic-realtime` 0.3. The live client no longer seeds a room, so it needs a Worker of this version.
+  Playwright E2E with axe checks run in `npm run ci:local`. The UI is built from source with `npm run build`. The npm package does not include it.
+- Add a demo Worker config (`wrangler.demo.jsonc`) and the `deploy:demo` script, with a Live demo section in the README.
 - Add `GET /boards` and `PATCH /boards/:id/elements/:element`, the client methods `listBoards` and `update`, the CLI
   commands `list` and `update`, and the MCP tools `list_boards` and `update_element`. They work on the local store
   and in a live room. A list shows the first 100 boards.
+
+**Changed**
+
+- Save a live room back to the Store in the Worker. A raw WebSocket client needs no seed or checkpoint call, and room
+  edits reach the Store before the next board read or write.
+- A hand save (`POST /boards/:id/checkpoint`) puts the part of the posted update that the room lacks into the room, so
+  every peer gets it. It stamps that content with its poster. It fails with `FORBIDDEN` when the update uses a client id
+  that the room holds for another principal, and with `UNAVAILABLE` when the room has no log or cannot be saved.
+- Publish to `npm.ants.land` as well as npm. The publish step writes its auth line with `printf`.
 
 ## 0.3.0
 

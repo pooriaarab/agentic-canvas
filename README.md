@@ -7,9 +7,9 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.3.0. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.4.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
-> and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new and unreleased.
+> and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 
 ## Install
 
@@ -227,11 +227,11 @@ at the same time keep the last write. The board list shows the first 100 boards.
   server join when `CANVAS_SERVER` and `CANVAS_TOKEN` are set. The token sets the actor, so
   `CANVAS_ACTOR` is not needed. `--dir`, `CANVAS_DIR`, and `repair` stay local.
 - Yjs underneath: two copies of a board merge without conflicts.
-- No UI code. The model is plain TypeScript on Yjs, with no outbound calls.
+- The board model has no UI code. It is plain TypeScript on Yjs, with no outbound calls.
 
 ## Limits
 
-- Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.4.
+- Canvas takes principal kinds, regions, and the Store and Blobs ports from `agentic-identity` 0.5.
   It does not use the sharing API yet. Its editor and viewer tokens are a separate table in
   `CANVAS_API_TOKENS`. It has no board delete or erase. When it adopts sharing, grants are keyed
   on kind and id, and a delete calls `deleteResource`.
