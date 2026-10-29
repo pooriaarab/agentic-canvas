@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+**Changed**
+
+- A calmer board look, with `agentic-design` ^0.5.0 (was ^0.4.0). The shape palette and the zoom controls float on the canvas as two small toolbars. The canvas has a soft dot grid and a large radius. Shapes and connectors have thinner lines. The save status sits under the title. The empty state is centered on the canvas. The look follows Tiny Little Office (https://tinylittleoffice.com, MIT). No code is copied.
+- The toolbar named "Board tools" is now two toolbars: "Shape palette" and "Zoom and pan".
+
 ## 0.11.0
 
 **Added**
