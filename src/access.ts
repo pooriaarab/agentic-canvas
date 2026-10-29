@@ -176,13 +176,13 @@ export class CanvasAccess {
   }
 
   /** The links of a board. A summary never holds the token or its hash. Needs an owner. */
-  async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[]; truncated?: true }> {
+  async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[]; truncated?: true; skipped?: number }> {
     this.known(id);
     await this.require(ctx, "admin", id);
     // Read up to 1000 records, then show live links first: an owner who looks for a leaked link finds it before old revoked ones.
     const all: LinkSummary[] = [];
     let cursor: string | undefined;
-    let cut = false;
+    let skipped = 0;
     for (let pages = 0; pages < 10; pages++) {
       const page = await this.store.query("links", { where: { resourceId: id }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
       for (const { id: key, data } of page.items) {
@@ -190,7 +190,7 @@ export class CanvasAccess {
         // A bad `expiresAt` is a dead link for agentic-identity, so it is not shown as one that never ends.
         const expiresOk = data.expiresAt === undefined || (typeof data.expiresAt === "number" && Number.isFinite(data.expiresAt));
         if (data.id !== key || data.resourceId !== id || typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role) || !expiresOk) {
-          cut = true;
+          skipped++;
           continue;
         }
         all.push({
@@ -208,8 +208,8 @@ export class CanvasAccess {
     const live = (l: LinkSummary) => l.revokedAt === undefined && (l.expiresAt === undefined || l.expiresAt > now);
     all.sort((x, y) => Number(live(y)) - Number(live(x)) || (y.expiresAt ?? Infinity) - (x.expiresAt ?? Infinity) || x.id.localeCompare(y.id));
     const links = all.slice(0, 200);
-    // A cut list says so: an owner who looks for a leaked link must know it may be missing.
-    return { links, ...(cut || cursor !== undefined || all.length > 200 ? { truncated: true as const } : {}) };
+    // A cut list says so: an owner who looks for a leaked link must know it may be missing. `skipped` counts the damaged records left out.
+    return { links, ...(cursor !== undefined || all.length > 200 ? { truncated: true as const } : {}), ...(skipped > 0 ? { skipped } : {}) };
   }
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */

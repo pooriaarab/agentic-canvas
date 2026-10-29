@@ -149,8 +149,8 @@ export interface CanvasClient {
   revoke(id: string, input: Subject, options?: CallOptions): Promise<{ ok: true }>;
   /** Invite a person by email or an agent by handle. Returns the invite id. Needs the owner role. */
   invite(id: string, input: InviteInput, options?: CallOptions): Promise<{ id: string }>;
-  /** The share links of a board, without their tokens, up to 200. `truncated` is set if the list is not complete. Needs the owner role. */
-  links(id: string, options?: CallOptions): Promise<{ links: BoardLink[]; truncated?: true }>;
+  /** The share links of a board, without their tokens, up to 200. `truncated` is set if there are more. `skipped` counts damaged records left out. Needs the owner role. */
+  links(id: string, options?: CallOptions): Promise<{ links: BoardLink[]; truncated?: true; skipped?: number }>;
   /** Make a share link. The token comes back once and is never stored. Needs the owner role. */
   createLink(id: string, input: LinkInput, options?: CallOptions): Promise<{ id: string; token: string }>;
   /** Revoke a share link. Needs the owner role. */
