@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Board, CanvasError } from "./core/board.js";
 import { drawFlow, type DrawOptions } from "./core/flow.js";
-import type { Principal } from "./core/principal.js";
+import { principalSchema, type Principal } from "./core/principal.js";
 import { readBoard, type BoardData } from "./core/read.js";
 import { toSvg } from "./core/svg.js";
 import { svgToPng } from "./png.js";
@@ -68,14 +68,34 @@ export class CanvasService {
     return svgToPng(await this.exportSvg(id));
   }
 
+  /** Owner only. Repair a board and delete the named elements. Only a human actor may call it. */
+  async repair(id: string, actor: Principal, drop: string[] = []): Promise<{ id: string; fixed: string[]; elements: number }> {
+    const by = principalSchema.safeParse(actor);
+    if (!by.success) throw new CanvasError("INVALID", "the actor must be a valid principal");
+    if (by.data.kind !== "human") throw new CanvasError("FORBIDDEN", "only a human owner can repair a board");
+    return this.store.transaction(async (tx) => {
+      const doc = await tx.get(COLLECTION, id);
+      if (!doc) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
+      const board = decodeStored(doc, id, Board.open);
+      const fixed = board.repair(drop);
+      await tx.put(COLLECTION, id, { update: toBase64(board.encode()) });
+      return { id, fixed, elements: board.list().length };
+    });
+  }
+
   private async load(read: Promise<{ update?: unknown } | null>, id: string): Promise<Board> {
     const doc = await read;
     if (!doc) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
-    try {
-      return Board.decode(fromBase64(String(doc.update)));
-    } catch {
-      throw new CanvasError("INVALID", `stored board "${id}" is damaged`);
-    }
+    return decodeStored(doc, id, Board.decode);
   }
 }
 
+/** A cap error is shown as it is. Anything else from a stored update means the file is damaged. */
+function decodeStored(doc: { update?: unknown }, id: string, decode: (bytes: Uint8Array) => Board): Board {
+  try {
+    return decode(fromBase64(String(doc.update)));
+  } catch (error) {
+    if (error instanceof CanvasError) throw error;
+    throw new CanvasError("INVALID", `stored board "${id}" is damaged`);
+  }
+}

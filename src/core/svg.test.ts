@@ -119,7 +119,7 @@ const ATTRS = new Set(
     "text-anchor dominant-baseline data-id data-type data-author-kind data-machine-made").split(" "),
 );
 const TYPES = new Set(["rect", "ellipse", "diamond", "text", "sticky", "frame", "image", "connector"]);
-const KINDS = new Set([...PRINCIPAL_KINDS, "unknown"]);
+const KINDS = new Set<string>(PRINCIPAL_KINDS);
 
 /** Split the SVG into tags and text. Fail when any byte is outside a well-formed, allowed tag. */
 function inspect(svg: string): string[] {
