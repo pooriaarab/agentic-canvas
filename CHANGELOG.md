@@ -17,6 +17,10 @@
 
 - A board id, link id, invite id, or subject id that the Store refuses gets a 4xx error with a code, not a 500, on the role gate and the sharing routes.
 
+**Changed**
+
+- Depend on `agentic-design` 0.3 (was 0.2).
+
 ## 0.7.0
 
 **Breaking changes**
