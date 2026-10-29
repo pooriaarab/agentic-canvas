@@ -190,7 +190,7 @@ export const canvasAccount: CanvasAccount = {
     const { store } = deps;
     const sharing = createSharing(store);
     const total: Record<CanvasCollection, number> = { boards: 0, grants: 0, invites: 0, authored_elements: 0, edited_elements: 0, titles: 0, audit: 0 };
-    const ctx: PrincipalContext = { principalId: subject.id, kind: subject.kind, chain: [{ id: subject.id, kind: subject.kind }], scopes: [`${RESOURCE_TYPE}:admin`] } as PrincipalContext;
+    const ctx: PrincipalContext = { principalId: subject.id, kind: subject.kind, chain: [{ id: subject.id, kind: subject.kind }], scopes: [`${RESOURCE_TYPE}:admin`] };
     const mine = await held(store, subject);
 
     // Scan every board before the first change: a board that does not decode stops the call with nothing done.
@@ -200,6 +200,8 @@ export const canvasAccount: CanvasAccount = {
       const found = board.stampedBy(subject);
       if (found.authored.length > 0 || found.edited.length > 0 || found.titleBy) stamped.push(id);
     }
+    // The sharing erase refuses a board that has child resources. Refuse here, before the first delete, so a retry can finish.
+    for (const id of mine.sole) if ((await rows(store, "resources", { parentId: id })).length > 0) throw new CanvasError("INVALID", `board "${id}" has child resources: remove them first`);
     // Audit first: the entries of a board that goes below are removed with it, and a repeat after a failure still finds the rest.
     for (const { id, data } of await auditOf(store, subject)) {
       await store.put("audit", id, scrub(data, subject) as Record<string, Json>);
@@ -225,7 +227,12 @@ export const canvasAccount: CanvasAccount = {
       const done = await store.transaction(async (tx) => {
         const doc = await tx.get("boards", id);
         if (!doc) return null;
-        const board = Board.open(fromBase64(String(doc.update)));
+        let board: Board;
+        try {
+          board = Board.open(fromBase64(String(doc.update)));
+        } catch {
+          throw new CanvasError("INVALID", `stored board "${id}" is damaged`);
+        }
         const counts = board.eraseStamps(subject, { kind: subject.kind, id: ERASED });
         await tx.put("boards", id, { update: toBase64(board.encode()) });
         return counts;

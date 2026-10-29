@@ -229,4 +229,12 @@ describe("canvasAccount", () => {
     await store.transaction((tx) => tx.put("invites", "badinv", { id: "badinv", role: "viewer", createdBy: "ada" }));
     await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
   });
+
+  test("refuses before any change when a board has a child resource", async () => {
+    const { store, service } = await setup();
+    await store.transaction((tx) => tx.put("resources", "child", { id: "child", type: "docs", parentId: "mine" }));
+    await expect(canvasAccount.eraseAccount(ada, { store })).rejects.toMatchObject({ code: "INVALID" });
+    expect((await service.read("mine")).id).toBe("mine");
+    expect((await store.query("invites", { where: { createdBy: "ada" }, limit: 5 })).items).toHaveLength(2);
+  });
 });
