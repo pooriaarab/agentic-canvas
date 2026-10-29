@@ -12,15 +12,11 @@ export interface LiveEnv extends WorkerEnv {
   SYNC_ROOM?: Namespace;
 }
 
-/**
- * The Worker with live rooms. One Durable Object holds one board, in the EU jurisdiction when the region is "eu".
- * Durable Objects have no US jurisdiction: with "us" a room sits near the first client that opens it.
- */
+/** The Worker with live rooms: one Durable Object per board, in the EU jurisdiction when the region is "eu" (there is no US one). */
 const app = createApp({
   live: (env) => {
     const rooms = (env as LiveEnv).SYNC_ROOM;
     if (!rooms) throw new CanvasError("UNAVAILABLE", "bind a Durable Object namespace as SYNC_ROOM");
-    // The same claim as the HTTP API: the middleware already refused a request with no valid region.
     return createDurableObjectRealtime(rooms, parseRegion(env.CANVAS_REGION ?? "") === "eu" ? "eu" : undefined);
   },
 });

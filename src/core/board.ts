@@ -251,11 +251,11 @@ export class Board {
   }
 
   /**
-   * Make the author stamps of a merged board honest. `prior` is the board before the merge, and `trusted`
-   * says whether a principal really wrote in this session. A new element stamped by anyone else is deleted.
-   * On an old element the author never changes. A changed element must carry the stamp of a trusted editor,
-   * or it goes back to its prior state. A stamp changed alone is put back. The title follows the same rule,
-   * and meta keys other than the title and its stamp are deleted. Returns the ids it deleted or restored.
+   * Make the author stamps of a merged board honest. `prior` is the board before the merge, and `trusted` says whether
+   * a principal really wrote in this session. A new element stamped by anyone else is deleted. An old element keeps its
+   * author, and a changed one needs a trusted editor or it goes back to its prior state. An editor stamp changed alone
+   * to an untrusted principal is put back. Unknown keys, nested Yjs types, and bad or foreign title values are deleted
+   * or undone. Returns the ids it deleted or restored.
    */
   restamp(prior: Board, trusted: (who: Principal) => boolean): string[] {
     const before = new Map(prior.allStored().map((e) => [e.id, e]));
@@ -283,12 +283,13 @@ export class Board {
       }
       for (const el of this.allStored()) {
         const entry = this.elements.get(el.id)!;
-        const extra = [...entry.keys()].filter((key) => !(key in el));
+        // A nested Yjs type reads as plain data but can hold more, such as an embed, so no field may be one.
+        const extra = [...entry.keys()].filter((key) => !(key in el) || entry.get(key) instanceof Y.AbstractType);
         extra.forEach((key) => entry.delete(key));
         if (extra.length > 0 && !fixed.includes(el.id)) fixed.push(el.id);
       }
       // Compare the raw values: a getter hides a value that fails its check, but the doc still holds it.
-      const same = (key: string) => JSON.stringify(this.meta.get(key)) === JSON.stringify(prior.meta.get(key));
+      const same = (key: string) => !(this.meta.get(key) instanceof Y.AbstractType) && JSON.stringify(this.meta.get(key)) === JSON.stringify(prior.meta.get(key));
       const by = this.titleBy;
       const title = this.meta.get("title");
       const honest = by !== undefined && trusted(by) && (title === undefined || titleSchema.safeParse(title).success);

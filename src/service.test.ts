@@ -151,6 +151,23 @@ describe("live checkpoint", () => {
     }
   });
 
+  test("a nested Yjs type hides data from the checks: it is deleted with the element, or the title is undone", async () => {
+    const service = await open();
+    const before = (await service.state("b")).length;
+    const update = await room(service, (b) => {
+      for (const [map, key] of [[b.doc.getMap<Y.Map<unknown>>("elements").get("s1")!, "text"], [b.doc.getMap("meta"), "title"]] as const) {
+        const text = new Y.Text();
+        map.set(key, text);
+        text.insertEmbed(0, { big: "x".repeat(100_000) });
+      }
+      b.doc.getMap("meta").set("titleBy", bot);
+    });
+    const result = await service.checkpoint("b", update, bot, [bot, human]);
+    expect(result.fixed).toEqual(["s1", "title"]);
+    expect((await service.read("b")).nodes).toEqual([]);
+    expect((await service.state("b")).length).toBeLessThan(before + 500);
+  });
+
   test("an update that lacks its earlier part is refused and the board does not grow", async () => {
     const service = await open();
     const before = (await service.state("b")).length;
