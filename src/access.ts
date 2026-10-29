@@ -24,6 +24,10 @@ const oneOf = <T extends string>(value: unknown, list: readonly T[], name: strin
   if (typeof value !== "string" || !(list as readonly string[]).includes(value)) throw new CanvasError("INVALID", `${name} must be one of: ${list.join(", ")}`);
   return value as T;
 };
+const storeId = (value: unknown, name: string): string => {
+  if (typeof value !== "string" || !isStoreId(value)) throw new CanvasError("INVALID", `${name} must be 1 to 128 of A-Z, a-z, 0-9, _ and -, and not like __x__`);
+  return value;
+};
 const word = (value: unknown, name: string): string => {
   if (typeof value !== "string" || value === "") throw new CanvasError("INVALID", `${name} must be a non-empty string`);
   return value;
@@ -47,6 +51,11 @@ export class CanvasAccess {
   constructor(private readonly store: Store, options: { now?: () => number } = {}) {
     this.sharing = createSharing(store, options);
     this.now = options.now ?? Date.now;
+  }
+
+  /** A board id that the Store refuses names no board. The gate checks this for a role holder: a token of the dev list skips the gate. */
+  private known(id: string): void {
+    if (!isBoardId(id)) throw new CanvasError("NOT_FOUND", `no board "${id}"`);
   }
 
   /** Make the actor the owner of a new board. */
@@ -106,24 +115,28 @@ export class CanvasAccess {
   }
 
   async grant(ctx: PrincipalContext, id: string, input: { subjectKind?: unknown; subjectId?: unknown; role?: unknown }): Promise<{ ok: true }> {
-    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: word(input.subjectId, "subjectId") };
+    this.known(id);
+    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: storeId(input.subjectId, "subjectId") };
     await this.sharing.grant(ctx, id, subject, oneOf(input.role, ROLES, "role")).catch(refuse);
     return { ok: true };
   }
 
   async revoke(ctx: PrincipalContext, id: string, input: { subjectKind?: unknown; subjectId?: unknown }): Promise<{ ok: true }> {
-    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: word(input.subjectId, "subjectId") };
+    this.known(id);
+    const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: storeId(input.subjectId, "subjectId") };
     await this.sharing.revokeGrant(ctx, id, subject).catch(refuse);
     return { ok: true };
   }
 
   /** The grants and the invites on a board. An invite never shows its email. Links are not listed: a token shows once. */
   async list(ctx: PrincipalContext, id: string): Promise<{ grants: Grant[]; invites: InviteSummary[] }> {
+    this.known(id);
     const [grants, invites] = await Promise.all([this.sharing.listGrants(ctx, id, { limit: 200 }), this.sharing.listInvites(ctx, id, { limit: 200 })]).catch(refuse);
     return { grants: grants.grants, invites: invites.invites };
   }
 
   async invite(ctx: PrincipalContext, id: string, input: { role?: unknown; email?: unknown; handle?: unknown; expiresInMs?: unknown }): Promise<{ id: string }> {
+    this.known(id);
     const role = oneOf(input.role, SHARE_ROLES, "role");
     const expiresInMs = lifetime(input.expiresInMs, "expiresInMs");
     const who = input.email !== undefined ? { email: word(input.email, "email") } : input.handle !== undefined ? { handle: word(input.handle, "handle") } : {};
@@ -146,6 +159,7 @@ export class CanvasAccess {
 
   /** The token shows once. Only its hash is stored. */
   async createLink(ctx: PrincipalContext, id: string, input: { role?: unknown; signedInOnly?: unknown; expiresInMs?: unknown }): Promise<{ id: string; token: string }> {
+    this.known(id);
     const role = oneOf(input.role, SHARE_ROLES, "role");
     const expiresInMs = lifetime(input.expiresInMs, "expiresInMs");
     if (input.signedInOnly !== undefined && typeof input.signedInOnly !== "boolean") throw new CanvasError("INVALID", "signedInOnly must be true or false");
@@ -154,6 +168,7 @@ export class CanvasAccess {
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */
   async revokeLink(ctx: PrincipalContext, id: string, linkId: string): Promise<{ ok: true }> {
+    this.known(id);
     const link = isStoreId(linkId) ? await this.store.get("links", linkId) : null;
     if (!link || link.resourceId !== id) throw new CanvasError("NOT_FOUND", "no such link on this board");
     await this.sharing.revokeLink(ctx, linkId).catch(refuse);
