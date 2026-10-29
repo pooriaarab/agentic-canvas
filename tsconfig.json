@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "tsup.config.ts", "vitest.config.ts"]
+  "include": ["src", "e2e", "tsup.config.ts", "vitest.config.ts", "vite.config.ts"]
 }

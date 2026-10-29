@@ -52,9 +52,22 @@ function sameText(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** A browser cannot set a header on a WebSocket. It offers the token as the sub-protocols `agentic-canvas.bearer` and the token in base64url. */
+export const WS_PROTOCOL = "agentic-canvas.bearer";
+function socketToken(request: Request): string | undefined {
+  if (request.headers.get("upgrade") !== "websocket") return undefined;
+  const [name, encoded, ...more] = (request.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
+  if (name !== WS_PROTOCOL || !encoded || more.length > 0 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return undefined;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
+  } catch {
+    return undefined;
+  }
+}
+
 /** The principal and role for a bearer token, or null. The kind is never defaulted: a grant without a valid kind gets null. */
 export function authenticate(request: Request, env: WorkerEnv): { actor: Principal; role: Role } | null {
-  const token = /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+  const token = /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? socketToken(request);
   if (!token || !env.CANVAS_API_TOKENS) return null;
   let grants: unknown;
   try {
@@ -191,7 +204,12 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const id = c.req.param("id");
     await c.var.service.assertExists(id);
     const { actor, role } = c.var;
-    return options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
+    const opened = await options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
+    // A browser closes a socket whose answer does not pick one of the sub-protocols it offered.
+    if (opened.status !== 101 || c.req.header("authorization") || !socketToken(c.req.raw)) return opened;
+    const headers = new Headers(opened.headers);
+    headers.set("sec-websocket-protocol", WS_PROTOCOL);
+    return new Response(null, { status: 101, headers, webSocket: (opened as unknown as { webSocket: unknown }).webSocket } as ResponseInit);
   });
 
   // A client reads the start state of a room here, applies it to the room, and saves the room back. These are sync plumbing, not board commands.
