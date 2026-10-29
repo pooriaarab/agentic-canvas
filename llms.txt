@@ -6,7 +6,7 @@ Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 
 - SDK: import { Board, drawFlow, readBoard, toSvg } from "agentic-canvas".
 - Exports: the README "Exports" section lists every name of each entry point: agentic-canvas, /client, /file-store, /live, /worker and /live-worker.
-- CLI: agentic-canvas new|list|read|add|connect|update|move|rm|flow|export.
+- CLI: agentic-canvas new|list|read|add|connect|update|move|rm|delete|flow|export.
 - UI: the Worker serves a web UI at its root (run `npm run build`, then `wrangler dev`). A person signs in with a bearer token: an agentic-identity credential (scope canvas:write or canvas:read). A static CANVAS_API_TOKENS list works only with CANVAS_UNSAFE_STATIC_TOKENS=1 (dev).
 - Live: set CANVAS_SERVER and CANVAS_TOKEN, and the CLI and `agentic-canvas mcp` edit the board in its live room.
 - SDK: import { LiveBoard, LiveService } from "agentic-canvas/live".
