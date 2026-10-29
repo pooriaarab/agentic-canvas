@@ -137,7 +137,7 @@ file, and deploy it the same way. Remove `CANVAS_UNSAFE_STATIC_TOKENS` from your
 
 The Worker signs requests in with `agentic-identity` (`agentic-identity/http`). A bearer key (an `api_key` or
 `pat` credential) is a credential in the same Store as the boards (D1). A `session` credential works as a
-bearer key too, and as the `session` cookie for reads. A write or a socket that rides on the cookie gets 403,
+bearer key too, and as the `session` cookie for reads. A write or a socket that rides on the cookie gets 401,
 because the Worker lists no allowed origins. A credential names a principal, and the principal's scopes set the role:
 
 - Any scope that covers `canvas:write`, such as `canvas:write`, `canvas:admin`, `*:write`, or `*:admin`, is an editor.

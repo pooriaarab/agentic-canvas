@@ -7,7 +7,7 @@
 - The Worker signs requests in with `agentic-identity` credentials in the Store by default. The principal's scopes set the role: `canvas:write` is an editor, `canvas:read` a viewer. A deploy that relied on `CANVAS_API_TOKENS` alone must issue `agentic-identity` credentials before it upgrades.
 - `CANVAS_API_TOKENS` is a dev fallback. It is read only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. A Worker that sets the list without the switch answers 503 `NOT_CONFIGURED` on every API request until you set the switch or remove the list.
 - `authenticate(request, env)` from `agentic-canvas/worker` reads the static list only with `CANVAS_UNSAFE_STATIC_TOKENS=1`. Its new optional third argument is the Store.
-- A write or a live socket that rides on the `session` cookie gets 403. A bearer credential is needed for writes.
+- A write or a live socket that rides on the `session` cookie gets 401. A bearer credential is needed for writes.
 - A Store that fails during sign-in answers 503 or 500, not 401, so a caller does not think its credential is wrong.
 
 **Added**
