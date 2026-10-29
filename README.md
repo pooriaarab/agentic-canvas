@@ -84,6 +84,33 @@ The flow text takes one statement per line: `A -> B: label`. Use `[text]` for a
 box, `(text)` for an ellipse, and `{text}` for a diamond. `direction LR` sets
 the direction. Lines that start with `#` or `//` are comments.
 
+### Remote client
+
+Call a running Worker from a browser, a Worker, or Node 22. The client uses only `fetch`.
+
+```ts
+import { createClient, CanvasApiError } from "agentic-canvas/client";
+
+const canvas = createClient({ baseUrl: "https://canvas.example.com/api/v1/canvas", token });
+await canvas.createBoard({ id: "plan", title: "Plan" });
+await canvas.addShape("plan", { type: "rect", x: 0, y: 0, text: "Start" });
+await canvas.drawFlow("plan", "A -> B: go");
+const board = await canvas.readBoard("plan");
+
+try {
+  await canvas.readBoard("missing");
+} catch (error) {
+  if (error instanceof CanvasApiError) console.log(error.code, error.status); // NOT_FOUND 404
+}
+```
+
+There is one method per route: `me`, `createBoard`, `readBoard`, `exportSvg`, `addShape`, `addConnector`,
+`drawFlow`, `move`, `remove`, `uploadImage`, `getImage`, `state`, and `checkpoint`. Each takes
+`{ signal }` last, so an `AbortSignal` can stop a call. The token sets the actor. A failed call throws
+`CanvasApiError` with the API `code` and the HTTP `status`. A call that gets no reply has code `NETWORK`
+and status 0. The client never retries. A 503 means "try again", and the caller decides, because a
+repeated write can change a board twice. Pass `fetch` to use your own.
+
 ## Features
 
 - Shapes: rectangle, ellipse, diamond, text, sticky note, frame, image.
