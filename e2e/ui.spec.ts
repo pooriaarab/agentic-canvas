@@ -172,6 +172,7 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
   await item(page, "Ellipse: Second").focus();
   await page.keyboard.press("Delete");
   await expect(item(page, "Ellipse: Second")).toHaveCount(0);
+  await expect(page.locator(".canvas")).toBeFocused();
   expect((await client.readBoard("keys")).nodes.map((n) => n.id)).toEqual(["k1"]);
 
   // Delete in a text field edits text. It never removes the item.

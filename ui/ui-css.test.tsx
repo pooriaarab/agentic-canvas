@@ -9,8 +9,8 @@ test("ui.css holds no hex color", () => {
 
 // The old prefix matches ad blocker rules. The UI sources must use only agd- classes and tokens.
 test("the UI sources hold no ad- class or token", () => {
-  for (const file of readdirSync(new URL("./", import.meta.url)).filter((f) => /\.(css|html|mjs|tsx?)$/.test(f) && !f.includes(".test."))) {
-    const text = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+  for (const file of readdirSync(new URL("./", import.meta.url), { recursive: true }).map(String).filter((f) => /\.(css|html|mjs|tsx?)$/.test(f) && !f.includes(".test."))) {
+    const text = readFileSync(new URL(file, import.meta.url), "utf8");
     expect(text.match(/(?<![\w-])(?:--)?ad-[a-z]/g) ?? [], file).toEqual([]);
   }
 });
