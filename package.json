@@ -1,6 +1,6 @@
 {
   "name": "agentic-canvas",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "A shared whiteboard for diagrams, drawn by people and agents.",
   "keywords": [
     "whiteboard",
@@ -43,6 +43,10 @@
     "./worker": {
       "types": "./dist/worker.d.ts",
       "import": "./dist/worker.js"
+    },
+    "./account": {
+      "types": "./dist/account.d.ts",
+      "import": "./dist/account.js"
     },
     "./live": {
       "types": "./dist/live.d.ts",

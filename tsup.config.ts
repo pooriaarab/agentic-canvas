@@ -24,6 +24,7 @@ export default defineConfig([
     entry: {
       index: "src/index.ts",
       cli: "src/cli.ts",
+      account: "src/account.ts",
       "store-file": "src/store-file.ts",
       worker: "src/worker.ts",
       "live-worker": "src/live-worker.ts",
