@@ -1,8 +1,9 @@
-import { createStoreAuth, hasScope, parsePrincipal, parseRegion, type Auth, type Blobs, type Region, type Store } from "agentic-identity";
+import { createStoreAuth, hasScope, parsePrincipal, parseRegion, type Action, type Auth, type Blobs, type PrincipalContext, type Region, type Store } from "agentic-identity";
 import type { Realtime } from "agentic-realtime";
 import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } from "agentic-identity/cloudflare";
 import { acceptWebSocketProtocol, principalFromWebSocketRequest } from "agentic-identity/http";
 import { Hono, type Context } from "hono";
+import { CanvasAccess } from "./access.js";
 import { CanvasError, type ErrorCode } from "./core/board.js";
 import type { Principal } from "./core/principal.js";
 import { forget, handSave, pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
@@ -38,7 +39,14 @@ const MIN_TOKEN_LENGTH = 32;
 const DEFAULT_MAX_IMAGE_BYTES = 1_000_000;
 const MAX_JSON_BYTES = 1_000_000;
 export type Role = "editor" | "viewer";
-type App = { Bindings: WorkerEnv; Variables: { service: CanvasService; blobs: Blobs; actor: Principal; role: Role } };
+/** The caller. `dev` is true for a token of the static list: it holds no board roles and reaches every board. */
+export interface Caller {
+  actor: Principal;
+  role: Role;
+  principal: PrincipalContext;
+  dev: boolean;
+}
+type App = { Bindings: WorkerEnv; Variables: { service: CanvasService; access: CanvasAccess; blobs: Blobs; actor: Principal; role: Role; caller: Caller } };
 
 export interface AppOptions {
   /** Makes the live-room server from the Worker bindings. Without it, the ws route answers 404. */
@@ -100,10 +108,12 @@ function tokenAuth(env: WorkerEnv): Auth {
 const staticTokensOn = (env: WorkerEnv) => env.CANVAS_UNSAFE_STATIC_TOKENS === "1";
 
 /** The default: credentials and principals in the Store (agentic-identity). The static list, when it is on, is tried after them. */
-function workerAuth(env: WorkerEnv, store?: Store): { auth: Auth; failure(): unknown } {
+function workerAuth(env: WorkerEnv, store?: Store): { auth: Auth; failure(): unknown; dev(): boolean } {
   const auths: Auth[] = [];
   if (store) auths.push(createStoreAuth(store));
-  if (staticTokensOn(env)) auths.push(tokenAuth(env));
+  const devAuth = staticTokensOn(env) ? tokenAuth(env) : undefined;
+  if (devAuth) auths.push(devAuth);
+  let dev = false;
   // The http helper turns a throw into a 401. A store that fails is no wrong credential: keep the error so the caller can raise it.
   let failure: unknown;
   const auth: Auth = {
@@ -117,6 +127,7 @@ function workerAuth(env: WorkerEnv, store?: Store): { auth: Auth; failure(): unk
           return null;
         }
         if (!found) continue;
+        dev = auth === devAuth;
         // The kind and the id must pass the principal rules. The room's own seeder name is never a caller.
         let step: Principal;
         try {
@@ -130,7 +141,7 @@ function workerAuth(env: WorkerEnv, store?: Store): { auth: Auth; failure(): unk
       return null;
     },
   };
-  return { auth, failure: () => failure };
+  return { auth, failure: () => failure, dev: () => dev };
 }
 
 /**
@@ -140,13 +151,22 @@ function workerAuth(env: WorkerEnv, store?: Store): { auth: Auth; failure(): unk
  * Without `store` only the static list is read.
  */
 export async function authenticate(request: Request, env: WorkerEnv, store?: Store): Promise<{ actor: Principal; role: Role } | null> {
-  const { auth, failure } = workerAuth(env, store);
+  const found = await identify(request, env, store);
+  return found && { actor: found.actor, role: found.role };
+}
+
+/** Like `authenticate`, with the whole principal context that board roles are checked against. */
+export async function identify(request: Request, env: WorkerEnv, store?: Store): Promise<Caller | null> {
+  const { auth, failure, dev } = workerAuth(env, store);
   const found = await principalFromWebSocketRequest(request, auth, { protocol: WS_PROTOCOL, scope: "canvas:read" });
   // A store that failed is a 503 or a 500, never a 401: the caller must not think its credential is wrong.
   if (failure() !== undefined) throw failure();
   if (found instanceof Response) return null;
-  return { actor: { kind: found.kind, id: found.principalId }, role: hasScope(found.scopes, "canvas:write") ? "editor" : "viewer" };
+  return { actor: { kind: found.kind, id: found.principalId }, role: hasScope(found.scopes, "canvas:write") ? "editor" : "viewer", principal: found, dev: dev() };
 }
+
+const svgResponse = (svg: string) =>
+  new Response(svg, { headers: { "content-type": "image/svg+xml", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:" } });
 
 /** The image types we accept, found by their first bytes. The client's claim of a type is not trusted. */
 export function sniffImage(bytes: Uint8Array): string | null {
@@ -233,8 +253,8 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   const app = new Hono<App>();
   app.get("/health", (c) => c.json({ ok: true }));
 
-  const api = new Hono<App>();
-  api.use("*", async (c, next) => {
+  // The store, or the answer that stops the request: the Worker is not set up, or the database is not ready.
+  const open = async (c: Context): Promise<Store | Response> => {
     let region: Region;
     try {
       region = parseRegion(c.env.CANVAS_REGION ?? "");
@@ -245,15 +265,40 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     // A static list that is set but not switched on is a setup mistake. Refuse it loudly: it never signs anyone in.
     if (c.env.CANVAS_API_TOKENS && !staticTokensOn(c.env)) return fail("NOT_CONFIGURED", "CANVAS_API_TOKENS is a dev fallback. Set CANVAS_UNSAFE_STATIC_TOKENS=1 to use it, or remove it and issue agentic-identity credentials", 503);
     await ready(c.env.DB);
-    const store = createD1Store(c.env.DB, { region });
-    const who = await authenticate(c.req.raw, c.env, store);
+    return createD1Store(c.env.DB, { region });
+  };
+
+  // A visitor with a link token reads one board. It sits before the bearer check of `api`, so that check does not run here.
+  // A bearer token, if one is sent, must be valid. The link token is in `x-link-token`.
+  const shared = new Hono<App>();
+  const visit = async (c: Context<App>, route: (service: CanvasService) => Promise<Response>) => {
+    const store = await open(c);
+    if (store instanceof Response) return store;
+    const who = await identify(c.req.raw, c.env, store);
+    if (!who && c.req.header("authorization")) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
+    const id = c.req.param("id")!;
+    await new CanvasAccess(store).require(who?.principal ?? null, "read", id, c.req.header("x-link-token") ?? "");
+    return route(new CanvasService(store));
+  };
+  shared.get("/:id", (c) => visit(c, async (service) => c.json(await service.read(c.req.param("id")!))));
+  shared.get("/:id/svg", (c) => visit(c, async (service) => svgResponse(await service.exportSvg(c.req.param("id")!))));
+  app.route("/api/v1/canvas/shared", shared);
+
+  const api = new Hono<App>();
+  api.use("*", async (c, next) => {
+    const store = await open(c);
+    if (store instanceof Response) return store;
+    const who = await identify(c.req.raw, c.env, store);
     if (!who) return fail("UNAUTHORIZED", "send a valid bearer token", 401);
-    if (who.role === "viewer" && c.req.method !== "GET") return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
+    // Accepting an invite writes no board: a read-only credential may still take its share.
+    if (who.role === "viewer" && c.req.method !== "GET" && !(c.req.method === "POST" && c.req.path === "/api/v1/canvas/invites/accept")) return fail("FORBIDDEN", "this token is a viewer; it cannot change a board", 403);
     c.set("actor", who.actor);
     c.set("role", who.role);
+    c.set("caller", who);
     c.set("service", new CanvasService(store));
+    c.set("access", new CanvasAccess(store));
     // The Worker serves image bytes itself and never makes a signed URL, so this secret signs nothing. It must exist, and it is new each time.
-    c.set("blobs", createR2Blobs(c.env.IMAGES, { region, urlBase: new URL(c.req.url).origin, urlSecret: `${crypto.randomUUID()}${crypto.randomUUID()}` }));
+    c.set("blobs", createR2Blobs(c.env.IMAGES, { region: parseRegion(c.env.CANVAS_REGION ?? ""), urlBase: new URL(c.req.url).origin, urlSecret: `${crypto.randomUUID()}${crypto.randomUUID()}` }));
     await next();
   });
 
@@ -278,9 +323,36 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     }
   };
   const sync = async (c: Context<App>, next: () => Promise<void>) => {
-    if (!/\/(ws|checkpoint)$/.test(new URL(c.req.url).pathname)) await saveRoom(c, false);
+    if (!/\/(ws|checkpoint)$/.test(new URL(c.req.url).pathname)) {
+      // A delete that finishes an earlier delete finds no board. It has no room to save.
+      await saveRoom(c, false).catch((error: unknown) => {
+        if (!(c.req.method === "DELETE" && error instanceof CanvasError && error.code === "NOT_FOUND")) throw error;
+      });
+    }
     await next();
   };
+  // The role a route needs on its board. This runs before the room is saved, so a stranger learns nothing from the cost of a request.
+  // A token of the static dev list holds no board roles and passes.
+  const ADMIN = new Set(["access", "grants", "invites", "links"]);
+  const WRITE = new Set(["shapes", "connectors", "flow", "move", "elements", "checkpoint"]);
+  // A route that is not listed fails closed: a read needs read, and any other method needs write.
+  const needs = (method: string, path: string): Action => {
+    // The router matches the decoded path, so the gate reads that one. A path that does not decode needs the highest role.
+    let decoded: string;
+    try {
+      decoded = decodeURI(path);
+    } catch {
+      return "admin";
+    }
+    const part = decoded.split("/boards/")[1]!.split("/");
+    if (part.length === 1) return method === "DELETE" ? "admin" : method === "GET" ? "read" : "write";
+    if (ADMIN.has(part[1]!)) return "admin";
+    return WRITE.has(part[1]!) || method !== "GET" ? "write" : "read";
+  };
+  api.use("/boards/:id/*", async (c, next) => {
+    if (!c.var.caller.dev) await c.var.access.require(c.var.caller.principal, needs(c.req.method, new URL(c.req.url).pathname), c.req.param("id")!);
+    await next();
+  });
   api.use("/boards/:id/*", sync);
 
   // The live room. The token sets the actor, the kind, and the role. The room opens only for a board that exists.
@@ -291,7 +363,9 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const id = c.req.param("id");
     // Save the room, then give it any part of the stored board that it lacks, so a client that joins needs no seed of its own.
     await saveRoom(c, true);
-    const { actor, role } = c.var;
+    const { actor, caller } = c.var;
+    // The room holds a reader to reading. An editor or owner on this board writes.
+    const role: Role = caller.dev ? c.var.role : (await c.var.access.allowed(caller.principal, "write", id)) ? "editor" : "viewer";
     const opened = await options.live(c.env).connect(id, c.req.raw, { principal: { id: actor.id, kind: actor.kind }, role, name: actor.id });
     // A browser closes a socket whose answer does not pick one of the sub-protocols it offered.
     return acceptWebSocketProtocol(c.req.raw, opened, WS_PROTOCOL);
@@ -310,25 +384,44 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json(await handSave(options.live(c.env), c.var.service, id, update, c.var.actor));
   });
 
-  api.get("/boards", async (c) => c.json({ boards: await c.var.service.list() }));
+  // A person or agent sees the boards it holds a role on. The static dev list sees all.
+  api.get("/boards", async (c) => c.json({ boards: c.var.caller.dev ? await c.var.service.list() : await c.var.service.summaries(await c.var.access.readable(c.var.caller.principal)) }));
 
   api.post("/boards", async (c) => {
     const b = await jsonBody(c);
     const id = b.id === undefined ? undefined : text(b.id, "id");
     const title = b.title === undefined ? undefined : text(b.title, "title");
-    return c.json(await c.var.service.create(c.var.actor, { id, title }), 201);
+    // A dev-list token cannot take an id that still has sharing records: the old owners would reach the new board.
+    if (c.var.caller.dev && id !== undefined && (await c.var.access.registered(id))) throw new CanvasError("DUPLICATE_ID", `board "${id}" already exists`);
+    const created = await c.var.service.create(c.var.actor, { id, title });
+    if (!c.var.caller.dev) {
+      // The creator owns the board. A board that fails to register is removed, so none is left that nobody can reach.
+      await c.var.access.register(c.var.caller.principal, created.id).catch(async (error: unknown) => {
+        await c.var.service.delete(created.id).catch((failed: unknown) => console.error(JSON.stringify({ level: "error", op: "undo-create", message: loggable(failed) })));
+        throw error;
+      });
+    }
+    return c.json(created, 201);
   });
   api.get("/boards/:id", async (c) => c.json(await c.var.service.read(c.req.param("id"))));
   // `sync` saves the room first, and a room that fails its checks is skipped, so its unsaved edits may be lost here.
   // The room is erased, then the board. The room is erased again after the delete: a client that joined in between
   // would have seeded it from the stored board, and a new board of the same id must not refill from it.
   // If the first erase fails, the board stays.
+  // The sharing records go last, and the erase of them may fail (for example, a board with over 100 owners). The board is gone
+  // by then, so the owner may call delete again: it finishes the cleanup. A token of the dev list never deletes a board that has owners.
   api.delete("/boards/:id", async (c) => {
     const id = c.req.param("id");
-    await c.var.service.assertExists(id);
+    const { dev, principal } = c.var.caller;
+    if (dev && (await c.var.access.registered(id))) throw new CanvasError("FORBIDDEN", "this board has owners: only an owner deletes it");
+    const present = await c.var.service.assertExists(id).then(() => true, (error: unknown) => {
+      if (error instanceof CanvasError && error.code === "NOT_FOUND" && !dev) return false;
+      throw error;
+    });
     const live = options.live?.(c.env);
     if (live) await live.erase(id);
-    const deleted = await c.var.service.delete(id);
+    const deleted = present ? await c.var.service.delete(id) : { deleted: id };
+    if (!dev) await c.var.access.unregister(principal, id);
     if (live) {
       await live.erase(id);
       forget(id);
@@ -336,8 +429,35 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     console.log(JSON.stringify({ level: "info", op: "delete-board", actorKind: c.var.actor.kind }));
     return c.json(deleted);
   });
-  api.get("/boards/:id/svg", async (c) =>
-    new Response(await c.var.service.exportSvg(c.req.param("id")), { headers: { "content-type": "image/svg+xml", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:" } }));
+  api.get("/boards/:id/svg", async (c) => svgResponse(await c.var.service.exportSvg(c.req.param("id"))));
+
+  // Sharing. Only an owner of the board shares it (the gate above). Links are listed nowhere: a token shows once.
+  api.get("/boards/:id/access", async (c) => c.json(await c.var.access.list(c.var.caller.principal, c.req.param("id"))));
+  api.post("/boards/:id/grants", async (c) => {
+    const id = c.req.param("id");
+    const input = await jsonBody(c);
+    const done = await c.var.access.grant(c.var.caller.principal, id, input);
+    // A socket keeps the role it joined with. A role below editor closes the subject's sockets, so a join again gets the new role.
+    if (options.live && (input.role === "viewer" || input.role === "commenter") && typeof input.subjectId === "string") {
+      await options.live(c.env).revoke(id, input.subjectId).catch((error: unknown) => console.error(JSON.stringify({ level: "error", op: "revoke-room", message: loggable(error) })));
+    }
+    return c.json(done);
+  });
+  api.delete("/boards/:id/grants", async (c) => {
+    const id = c.req.param("id");
+    const subjectKind = c.req.query("subjectKind");
+    const subjectId = c.req.query("subjectId");
+    const done = await c.var.access.revoke(c.var.caller.principal, id, { subjectKind, subjectId });
+    // Close the sockets the subject holds in the room. An agent that acts for the subject keeps its socket until it joins again,
+    // and the gate then refuses it.
+    if (options.live && subjectId) await options.live(c.env).revoke(id, subjectId).catch((error: unknown) => console.error(JSON.stringify({ level: "error", op: "revoke-room", message: loggable(error) })));
+    return c.json(done);
+  });
+  api.post("/boards/:id/invites", async (c) => c.json(await c.var.access.invite(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));
+  api.post("/boards/:id/links", async (c) => c.json(await c.var.access.createLink(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));
+  api.delete("/boards/:id/links/:link", async (c) => c.json(await c.var.access.revokeLink(c.var.caller.principal, c.req.param("id"), c.req.param("link"))));
+  // Not tied to a board: the invite names it. The caller must be the person or agent the invite is for.
+  api.post("/invites/accept", async (c) => c.json(await c.var.access.accept(c.var.caller.principal, text((await jsonBody(c)).id, "id"))));
   api.post("/boards/:id/shapes", async (c) => c.json(await c.var.service.add(c.req.param("id"), await jsonBody(c), c.var.actor), 201));
   api.post("/boards/:id/connectors", async (c) => c.json(await c.var.service.connect(c.req.param("id"), await jsonBody(c), c.var.actor), 201));
   api.post("/boards/:id/flow", async (c) => c.json(await c.var.service.flow(c.req.param("id"), text((await jsonBody(c)).text, "text"), c.var.actor)));

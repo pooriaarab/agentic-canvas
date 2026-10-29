@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+**Added**
+
+- Board sharing on the HTTP API, built on `agentic-identity`: roles (owner, editor, commenter, viewer), grant, revoke, list access, invite by email or handle, accept, and share links with an expiry and a sign-in option. A link token reads one board.
+
+**Breaking changes**
+
+- Every board route checks the caller's role on the board. A caller with no role gets 404. A board made before this change has no owner (see Limits in the README). The static dev list is not affected.
+- `GET /boards` lists the boards the caller holds a role on.
+- A new board is registered as an identity resource, with its maker as owner. Deleting a board removes its sharing records.
+
 ## 0.7.0
 
 **Breaking changes**
