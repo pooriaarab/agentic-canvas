@@ -179,3 +179,6 @@ function decodeStored(doc: { update?: unknown }, id: string, decode: (bytes: Uin
     throw new CanvasError("INVALID", `stored board "${id}" is damaged`);
   }
 }
+
+/** What the CLI and the MCP server need. `CanvasService` runs it on a store, and `LiveService` runs it in a live room. */
+export type BoardAccess = Pick<CanvasService, "create" | "read" | "add" | "connect" | "move" | "remove" | "flow" | "exportSvg">;
