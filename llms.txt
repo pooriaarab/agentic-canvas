@@ -11,7 +11,7 @@ Keywords: whiteboard,canvas,diagrams,drawing,collaboration,agents,mcp,cli.
 - Live: set CANVAS_SERVER and CANVAS_TOKEN, and the CLI and `agentic-canvas mcp` edit the board in its live room.
 - SDK: import { LiveBoard, LiveService } from "agentic-canvas/live".
 - SDK: import { createClient, CanvasApiError } from "agentic-canvas/client". It calls the Worker API with fetch. Methods: me, listBoards, createBoard, readBoard, deleteBoard, exportSvg, addShape, addConnector, drawFlow, update, move, remove, access, grant, revoke, invite, uploadImage, getImage, state, checkpoint. A failure throws CanvasApiError with `code` and `status`. No retries.
-- UI: import { mount } from "agentic-canvas/ui"; import "agentic-canvas/ui.css" (with agentic-design/styles.css). mount(element, { boardId, client, principal: { kind, name, role }, readOnly?, room?: { baseUrl, token } }) (or host: { doc, presence?, status?, onStatus? } instead of client and room, to edit the app's own Yjs document with no HTTP call) renders the board and returns { update(options), unmount() }. BoardEditor is the same as a React component. React 19 is a peer dependency.
+- UI: import { mount } from "agentic-canvas/ui"; import "agentic-canvas/ui.css" (with agentic-design/styles.css). mount(element, { boardId, client, principal: { kind, name, role, id? }, readOnly?, room?: { baseUrl, token } }) (or host: { doc, presence?, status?, onStatus? } instead of client and room; in host mode id (default name) must be letters, digits, . _ -, to edit the app's own Yjs document with no HTTP call) renders the board and returns { update(options), unmount() }. BoardEditor is the same as a React component. React 19 is a peer dependency.
 
 ## Docs
 

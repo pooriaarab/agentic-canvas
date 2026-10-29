@@ -22,5 +22,6 @@ Object.assign(window, {
   hostElements: () => [...(peerDoc.getMap("elements") as Y.Map<Y.Map<unknown>>).values()].map((m) => m.toJSON()),
   // A peer app writes into its copy.
   peerAdd: (id: string, text: string) => void new Board(peerDoc).addShape({ id, type: "rect", x: 300, y: 40, text }, { kind: "human", id: "bea" }),
-  requests: () => requests.filter((r) => r.includes("/api/")),
+  // Every resource the page loaded, except the two files the host page serves itself.
+  requests: () => requests.filter((r) => !/\/(app\.js|app\.css)$/.test(r)),
 });

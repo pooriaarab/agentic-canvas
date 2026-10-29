@@ -119,7 +119,13 @@ export function BoardView({ id, client: remote, host, room: roomOptions, me, bac
   useEffect(() => {
     if (!hostDoc) return;
     // Only the board's own maps count: the app may keep other data in the same document.
-    const changed = () => void load();
+    // Many updates in one tick (a room's first sync) draw once.
+    let queued = false;
+    const changed = () => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => ((queued = false), void load()));
+    };
     const elements = hostDoc.getMap("elements");
     const meta = hostDoc.getMap("meta");
     elements.observeDeep(changed);

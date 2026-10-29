@@ -17,7 +17,7 @@ export interface HostBoard {
   doc: Y.Doc;
   /** The presence of the app's room. With it, the UI shows who else is here. */
   presence?: RoomPresence;
-  /** The connection state now. Without `status`, the UI shows the board as live. */
+  /** The connection state now. With neither `status` nor `onStatus`, the UI shows the board as live. With only `onStatus`, it shows not live until the room reports "connected". */
   status?: () => Status;
   /** A way to hear when the connection state changes. It returns a function that stops the listener. The UI reads it once each time it opens `doc`. */
   onStatus?: (listener: (status: Status) => void) => () => void;
