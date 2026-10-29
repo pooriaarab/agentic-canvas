@@ -39,6 +39,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    },
     "./file-store": {
       "types": "./dist/store-file.d.ts",
       "import": "./dist/store-file.js"
@@ -71,9 +75,12 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "hono": "^4.13.14",
+    "miniflare": "^4.20260730.0",
     "playwright-core": "^1.64.1",
     "tsup": "^8.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "wrangler": "^4.155.0"
   }
 }

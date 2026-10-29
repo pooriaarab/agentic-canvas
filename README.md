@@ -8,7 +8,7 @@
 A shared whiteboard for diagrams, drawn by people and agents.
 
 > Status: 0.1.0, the first release. The board model, the agent operations, the
-> exports, the CLI, and the MCP server work. The HTTP API and the web UI are not
+> exports, the CLI, the MCP server, and a small Worker API work. The web UI is not
 > built yet.
 
 ## Install
@@ -101,6 +101,13 @@ the direction. Lines that start with `#` or `//` are comments.
   and every network request blocked. A board over 16 million pixels exports as SVG only.
 - A CLI over a local file store. Several processes can write at once.
 - An MCP server (stdio) over the same service as the CLI.
+- A Worker (`agentic-canvas/worker`) under `/api/v1/canvas`. Boards live in D1 and images in R2
+  (EU jurisdiction), through the shared `Store` and `Blobs` ports. Set `CANVAS_API_TOKENS`
+  (a JSON map of token to `{ actor, kind }`, tokens of 32 characters or more) and `CANVAS_REGION`.
+  Routes: `POST /boards`, `GET /boards/:id`, `GET /boards/:id/svg`, `POST /boards/:id/shapes`,
+  `/connectors`, `/flow`, `/move`, `DELETE /boards/:id/elements/:element`, `POST /images`,
+  `GET /images/:id`. An image is stored under the SHA-256 of its bytes, and the reply gives
+  the `blob:` ref for a shape. A busy database or bucket answers 503: try again.
 - Yjs underneath: two copies of a board merge without conflicts.
 - No UI code. The model is plain TypeScript on Yjs, with no outbound calls.
 
@@ -133,6 +140,9 @@ the direction. Lines that start with `#` or `//` are comments.
 - Node 22 or newer is needed. `agentic-canvas/file-store` exports `createFileStore(path)` and
   `openLocalStore(dir)`. A writer that is paused for more than 30 seconds can lose its lock
   and then still write.
+- Every Worker token reaches every board. There are no roles or sharing yet. Local
+  `wrangler dev` cannot confirm a region, so run it with `CANVAS_REGION=unknown`. A real D1
+  confirms `eu` or `us` on each query. The Worker has no PNG export.
 - Delete leaves no audit record yet. The caller logs it.
 - PNG needs the optional `playwright-core` and a Chromium. Without them it fails with
   `UNAVAILABLE`. SVG always works.
