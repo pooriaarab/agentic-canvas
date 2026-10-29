@@ -1,0 +1,17 @@
+{
+  // The public demo Worker on workers.dev. Same code as wrangler.jsonc, with its own D1 database and R2 bucket (both EU).
+  // Deploy: npm run build && npm run deploy:demo (see "Live demo" in the README).
+  // The API token is a Worker secret (`wrangler secret put CANVAS_API_TOKENS -c wrangler.demo.jsonc`). It is not in this file.
+  "name": "agentic-canvas-demo",
+  "main": "src/live-worker.ts",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": { "CANVAS_REGION": "eu" },
+  "assets": { "directory": "./ui-dist", "run_worker_first": ["/api/*", "/health"] },
+  "durable_objects": { "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
+  "d1_databases": [{ "binding": "DB", "database_name": "agentic-canvas-demo", "database_id": "c290202f-576c-43b3-809d-22c2e057385c" }],
+  "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "agentic-canvas-demo-images", "jurisdiction": "eu" }]
+}
