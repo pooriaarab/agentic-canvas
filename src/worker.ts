@@ -4,7 +4,7 @@ import { createD1Store, createR2Blobs, D1_SCHEMA, type D1Like, type R2Like } fro
 import { Hono, type Context } from "hono";
 import { CanvasError, type ErrorCode } from "./core/board.js";
 import { principalSchema, type Principal } from "./core/principal.js";
-import { handWriters, pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
+import { handSave, pull, roomAuthors, seed, SEEDER } from "./room-sync.js";
 import { CanvasService, MAX_LIVE_BYTES } from "./service.js";
 
 export interface WorkerEnv {
@@ -249,12 +249,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     await c.var.service.assertExists(id);
     const update = await readLimited(c.req.raw, MAX_LIVE_BYTES);
     if (!update) throw new CanvasError("INVALID", `the update must be at most ${MAX_LIVE_BYTES} bytes`);
-    const live = options.live(c.env);
-    // Save the room first, and not softly. Then an item of the posted update that reuses the id of an item of the room is a duplicate,
-    // and Yjs drops it: a client cannot post its own content under the ids that the log names for someone else.
-    const fromRoom = await pull(live, c.var.service, id);
-    const saved = await c.var.service.checkpoint(id, update, c.var.actor, await roomAuthors(live, id), await handWriters(live, id, c.var.actor));
-    return c.json({ ...saved, fixed: [...new Set([...fromRoom, ...saved.fixed])].sort() });
+    return c.json(await handSave(options.live(c.env), c.var.service, id, update, c.var.actor));
   });
 
   api.get("/boards", async (c) => c.json({ boards: await c.var.service.list() }));

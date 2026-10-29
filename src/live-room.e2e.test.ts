@@ -183,6 +183,10 @@ describe("live room", () => {
     await bot.flush();
     await call("/boards/b3/shapes", HUMAN, { method: "POST", body: JSON.stringify({ id: "rest1", type: "rect", x: 0, y: 0 }) });
     expect((await call("/boards/b3", HUMAN)).status).toBe(200);
+    // A hand save needs a saved room. This one cannot be saved, so the hand save is refused, whatever it holds.
+    const hand = new Board();
+    hand.addShape({ id: "h1", type: "rect", x: 0, y: 0 }, { kind: "human", id: "ada" });
+    expect((await call("/boards/b3/checkpoint", BOT, { method: "POST", body: hand.encode() as BodyInit })).status).toBe(422);
     const late = await enter("b3", HUMAN);
     await until(() => new Board(late.doc).get("rest1") !== undefined, "the room to take the HTTP change");
   }, 120_000);

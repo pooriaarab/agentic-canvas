@@ -109,7 +109,7 @@ export async function writers(live: Realtime, id: string): Promise<Writer> {
       if (list[mid]!.clock <= clock) low = mid + 1;
       else high = mid;
     }
-    // Ranges may overlap, because the room logs a resent item again. The first claim, the oldest one, is the true sender.
+    // Ranges may overlap, where the room replays its stored updates over a saved log. The first claim, the oldest one, is the true sender.
     let first: (typeof list)[number] | undefined;
     for (let i = low - 1; i >= 0 && reach.get(client)![i]! > clock; i--) {
       const r = list[i]!;
@@ -121,15 +121,18 @@ export async function writers(live: Realtime, id: string): Promise<Writer> {
 }
 
 /**
- * Writers for a hand save. The log names a sender by Yjs id, and an id says nothing about the content behind it: a client
- * can post its own content under the ids of someone else's logged range. So the log counts only for items that the room
- * holds. The poster is the sender of every other item.
+ * A save by hand. The room's state, read once, goes into the board before the posted update, so an item of the update that reuses
+ * the id of an item of the room is a duplicate, and Yjs drops it. The log names the sender of each item the room holds, and the poster
+ * is the sender of every other item: a client cannot post its own content under the ids that the log names for someone else.
+ * A room that fails its checks fails the save.
  */
-export async function handWriters(live: Realtime, id: string, poster: Principal): Promise<Writer> {
-  const log = await writers(live, id);
+export async function handSave(live: Realtime, service: CanvasService, id: string, update: Uint8Array, poster: Principal): Promise<{ elements: number; fixed: string[] }> {
   const state = await roomState(live, id);
+  // The log is read after the state, so it covers every item of the state.
+  const log = await writers(live, id);
   const held = state ? Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)) : new Map<number, number>();
-  return (item) => (item.clock < (held.get(item.client) ?? 0) ? log(item) : poster);
+  const writer: Writer = (item) => (item.clock < (held.get(item.client) ?? 0) ? log(item) : poster);
+  return service.checkpoint(id, update, poster, await roomAuthors(live, id), writer, state ?? undefined);
 }
 
 /** The principals the room saw send updates, except the seeder, which is no author. Only these may stamp a save. */

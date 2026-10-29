@@ -10,7 +10,7 @@ import type { Realtime } from "agentic-realtime";
 import { afterAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { Board } from "./core/board.js";
-import { handWriters, pull, seed, SEEDER, writers } from "./room-sync.js";
+import { handSave, pull, seed, SEEDER, writers } from "./room-sync.js";
 import { CanvasService } from "./service.js";
 import { openLocalStore } from "./store-file.js";
 
@@ -161,18 +161,37 @@ describe("writers", () => {
     expect(who({ client: 1, clock: 7 })).toEqual(ada);
     expect(who({ client: 1, clock: 50 })).toEqual(ada);
   });
+});
 
-  test("a hand save counts the log only for items the room holds", async () => {
+// Failure cases for a save by hand: the poster reuses the Yjs ids of a person's unsaved edit in the room to put its own content
+// under that person's name, the room cannot be saved but the hand save goes on, or content the room never had keeps a person's stamp.
+describe("handSave", () => {
+  const poster = { kind: "agent_of_human", id: "helper" } as const;
+
+  test("reused ids are duplicates, and content the room never had is the poster's", async () => {
+    const service = await open();
+    const base = Y.encodeStateAsUpdate(Board.decode(await service.state("b")).doc);
+    const room = Board.decode(base);
+    room.addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "ada text" }, ada);
+    const { live } = fakeRoom(room.doc);
+    // The poster's twin of Ada's edit: the same client id and clocks, other content, and a stamp that names Ada.
+    const twin = Board.decode(base);
+    twin.doc.clientID = room.doc.clientID;
+    twin.addShape({ id: "s4", type: "rect", x: 0, y: 0, text: "bot text" }, ada);
+    twin.doc.clientID = 424242;
+    twin.addShape({ id: "ghost", type: "rect", x: 1, y: 1 }, ada);
+    const result = await handSave(live, service, "b", twin.encode(), poster);
+    expect(result.fixed).toEqual(["ghost"]);
+    const nodes = (await service.read("b")).nodes;
+    expect(nodes.find((n) => n.id === "s4")).toMatchObject({ text: "ada text", author: ada });
+    expect(nodes.find((n) => n.id === "ghost")).toMatchObject({ author: poster, editedBy: poster, machineMade: true });
+  });
+
+  test("a room that cannot be saved fails the hand save", async () => {
     const service = await open();
     const room = Board.decode(await service.state("b"));
-    room.addShape({ id: "held", type: "rect", x: 0, y: 0 }, ada);
+    room.doc.getMap("junk").set("a", 1);
     const { live } = fakeRoom(room.doc);
-    const poster = { kind: "agent_of_human", id: "helper" } as const;
-    const who = await handWriters(live, "b", poster);
-    const client = room.doc.clientID;
-    // An item inside the room's state is Ada's, from the log. One past it, under the same client id, is the poster's.
-    expect(who({ client, clock: 0 })).toEqual(ada);
-    expect(who({ client, clock: 1e6 })).toEqual(poster);
-    expect(who({ client: 424242, clock: 0 })).toEqual(poster);
+    await expect(handSave(live, service, "b", new Board().encode(), poster)).rejects.toMatchObject({ code: "INVALID" });
   });
 });
