@@ -137,7 +137,7 @@ export class CanvasAccess {
     return { ok: true };
   }
 
-  /** The grants and the invites on a board. An invite never shows its email. Links are not listed: a token shows once. */
+  /** The grants and the invites on a board. An invite never shows its email. `listLinks` lists the links, and never a token. */
   async list(ctx: PrincipalContext, id: string): Promise<{ grants: Grant[]; invites: InviteSummary[] }> {
     this.known(id);
     const [grants, invites] = await Promise.all([this.sharing.listGrants(ctx, id, { limit: 200 }), this.sharing.listInvites(ctx, id, { limit: 200 })]).catch(refuse);
@@ -176,15 +176,20 @@ export class CanvasAccess {
   }
 
   /** The links of a board. A summary never holds the token or its hash. Needs an owner. */
-  async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[] }> {
+  async listLinks(ctx: PrincipalContext, id: string): Promise<{ links: LinkSummary[]; truncated?: true }> {
     this.known(id);
     await this.require(ctx, "admin", id);
     const links: LinkSummary[] = [];
     let cursor: string | undefined;
+    let cut = false;
     for (let pages = 0; pages < 10 && links.length < 200; pages++) {
       const page = await this.store.query("links", { where: { resourceId: id }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
       for (const { data } of page.items) {
-        if (links.length >= 200 || typeof data.id !== "string" || !(ROLES as readonly unknown[]).includes(data.role)) continue;
+        if (typeof data.id !== "string" || !(SHARE_ROLES as readonly unknown[]).includes(data.role)) continue;
+        if (links.length >= 200) {
+          cut = true;
+          break;
+        }
         links.push({
           id: data.id,
           role: data.role as Role,
@@ -195,7 +200,8 @@ export class CanvasAccess {
       }
       if ((cursor = page.nextCursor) === undefined) break;
     }
-    return { links };
+    // A cut list says so: an owner who looks for a leaked link must know it may be missing.
+    return { links, ...(cut || cursor !== undefined ? { truncated: true as const } : {}) };
   }
 
   /** Revoke a link of this board. A link of another board is NOT_FOUND here, even for an owner of both. */

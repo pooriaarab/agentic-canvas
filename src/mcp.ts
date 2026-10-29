@@ -162,7 +162,7 @@ export function createMcpServer(service: BoardAccess, actor: Principal, sharing?
   server.registerTool(
     "create_link",
     {
-      description: "Make a share link that lets anyone with the token read a board. The token shows once: keep it. The role is not owner. Needs the owner role.",
+      description: "Make a share link. Anyone with the token can read the board, and only read: the role does not widen a link visit. With signedInOnly, only a signed-in visitor may use it. The token shows once: keep it. The role is not owner. Needs the owner role.",
       inputSchema: { board, role: z.enum(["viewer", "commenter", "editor"]), signedInOnly: z.boolean().optional(), expiresInMs: z.number().optional() },
     },
     tool(async ({ board: b, ...input }) => json(await shared().createLink(b, input))),

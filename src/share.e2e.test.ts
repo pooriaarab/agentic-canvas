@@ -122,6 +122,18 @@ describe("the typed client", () => {
     expect((await ada.links("l-other")).links).toHaveLength(1);
   });
 
+  test("a list of more than 200 links says it was cut", async () => {
+    const ada = client("ada");
+    await ada.createBoard({ id: "l-many" });
+    // Write the records straight to the store: 201 calls over HTTP are slow.
+    await store.transaction(async (tx) => {
+      for (let i = 0; i < 201; i++) await tx.put("links", `many-${i}`, { id: `many-${i}`, resourceId: "l-many", role: "viewer", tokenHash: "x", signedInOnly: false });
+    });
+    const list = await ada.links("l-many");
+    expect([list.links.length, list.truncated]).toEqual([200, true]);
+    expect((await ada.links("l-board")).truncated).toBeUndefined();
+  });
+
   test("a non-owner and a stranger cannot use links, and bad input has a code", async () => {
     const ada = client("ada");
     await ada.createBoard({ id: "l-guard" });

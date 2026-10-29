@@ -179,7 +179,7 @@ HTTP routes, under `/api/v1/canvas`. Each needs a bearer token, except the link 
 | `DELETE /boards/:id/grants?subjectKind=&subjectId=` | Owner. Revoke. The last owner cannot be removed. |
 | `POST /boards/:id/invites` | Owner. Body `{ role, email }` or `{ role, handle }`, and optional `expiresInMs`. The role is not `owner`. Returns `{ id }`. |
 | `POST /invites/accept` | Body `{ id }`. The caller must be the person (verified email) or the agent (handle) the invite names. |
-| `GET /boards/:id/links` | Owner. The links of the board: `{ id, role, signedInOnly, expiresAt?, revokedAt? }`. No token. |
+| `GET /boards/:id/links` | Owner. The links of the board: `{ id, role, signedInOnly, expiresAt?, revokedAt? }`. No token. Up to 200, and `truncated: true` if there are more. |
 | `POST /boards/:id/links` | Owner. Body `{ role, signedInOnly?, expiresInMs? }`. Returns `{ id, token }`. The token shows once. |
 | `DELETE /boards/:id/links/:link` | Owner. Revoke a link of this board. |
 | `GET /shared/:id` and `GET /shared/:id/svg` | No bearer token needed. Send the link token in `x-link-token`. Read only. |
