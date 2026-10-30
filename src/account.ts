@@ -1,7 +1,3 @@
-// The package's side of the account contract: a host calls `exportAccount` and `eraseAccount` and never reads the
-// storage layout. The shape is provisional, as in other agentic packages: it is the contract that a later
-// `agentic-identity` release adds to `agentic-identity/account` as `AccountPackage`. The `AccountApp` of 0.9.0 is a
-// different contract (files for a zip), and this does not fit it.
 import { createSharing, ROLES, SUBJECT_KINDS, type Json, type PrincipalContext, type Store } from "agentic-identity";
 import { Board, CanvasError } from "./core/board.js";
 import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/principal.js";

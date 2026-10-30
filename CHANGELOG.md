@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.4 - 2026-10-30
+
+**Changed**
+
+- Document and check account registry composition with identity 0.12.
+
 ## 0.15.3 - 2026-10-30
 
 - Give board controls named groups with native button focus.
