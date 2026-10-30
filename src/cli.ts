@@ -56,7 +56,7 @@ const flags = {
   text: { type: "string" }, fill: { type: "string" }, stroke: { type: "string" }, src: { type: "string" },
   dx: { type: "string" }, dy: { type: "string" }, file: { type: "string" }, prefix: { type: "string" },
   format: { type: "string" }, role: { type: "string" }, email: { type: "string" }, handle: { type: "string" }, "expires-in-ms": { type: "string" }, "signed-in-only": { type: "boolean" }, out: { type: "string" }, drop: { type: "string", multiple: true },
-  help: { type: "boolean" }, version: { type: "boolean" },
+  help: { type: "boolean", short: "h" }, version: { type: "boolean" },
 } as const;
 
 // A blank or non-numeric flag becomes NaN, so the model refuses it with a clear error.

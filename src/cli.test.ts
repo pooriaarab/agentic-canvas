@@ -72,6 +72,14 @@ beforeAll(() => {
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 describe("usage errors", () => {
+  test.each(["--help", "-h"])("%s prints help without starting a server", async (flag) => {
+    const dir = fresh();
+    const r = await cli(dir, [flag], { CANVAS_SERVER: "invalid" });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Usage:");
+    expect(r.err).toBe("");
+    expect(existsSync(dir)).toBe(false);
+  });
   test.each([
     ["unknown command", ["frobnicate"]],
     ["unknown flag", ["read", "b", "--nope"]],
