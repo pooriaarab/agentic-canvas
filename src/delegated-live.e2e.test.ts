@@ -28,6 +28,7 @@ beforeAll(async () => {
     await store.transaction(tx => tx.put("principals", id!, { id, kind, scopes: ["canvas:admin"], ...(parentId ? { parentId } : {}) }));
     tokens[id!] = await store.transaction(tx => issueCredential(tx, { principalId: id!, kind: "api_key" }));
   }
+  await store.transaction(tx => tx.put("users", "parent", { id: "parent", email: "parent@example.com", emailVerified: true }));
 }, 120_000);
 afterAll(async () => {
   for (const socket of sockets) socket.close();
@@ -93,4 +94,11 @@ test("ancestor role changes stop delegated writes and reconnects, while unrelate
   const restored = await enter("grandchild");
   write(restored, "grandchild", "restored");
   await until(() => !!new Board(observer.doc).get("restored"));
+  // An accepted invite must restore the whole delegation too.
+  expect((await call("owner", "DELETE", "/boards/b/grants?subjectKind=human&subjectId=parent")).status).toBe(200);
+  const invite = await (await call("owner", "POST", "/boards/b/invites", { role: "editor", email: "parent@example.com" })).json() as { id: string };
+  expect((await call("parent", "POST", "/invites/accept", { id: invite.id })).status).toBe(200);
+  const invited = await enter("grandchild");
+  write(invited, "grandchild", "invited");
+  await until(() => !!new Board(observer.doc).get("invited"));
 }, 120_000);

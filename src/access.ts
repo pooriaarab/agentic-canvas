@@ -124,7 +124,9 @@ export class CanvasAccess {
   }
 
   /** The subject and all delegated descendants. Read every page; a cycle visits an id once. */
-  async delegationIds(subjectId: string, subjectKind: unknown): Promise<string[]> {
+  async delegationIds(inputId: unknown, subjectKind: unknown): Promise<string[]> {
+    const subjectId = storeId(inputId, "subjectId");
+    oneOf(subjectKind, SUBJECT_KINDS, "subjectKind");
     const root = await this.store.get("principals", subjectId);
     if (root && root.kind !== subjectKind) return [];
     const ids = new Set([subjectId]);
@@ -132,7 +134,10 @@ export class CanvasAccess {
       let cursor: string | undefined;
       do {
         const page = await this.store.query("principals", { where: { parentId }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
-        for (const child of page.items) ids.add(child.id);
+        for (const child of page.items) {
+          ids.add(child.id);
+          if (ids.size > 100) throw new CanvasError("LIMIT", "live access changes support at most 100 principals in one delegation");
+        }
         cursor = page.nextCursor;
       } while (cursor !== undefined);
     }
@@ -170,8 +175,9 @@ export class CanvasAccess {
   }
 
   /** The email comes from a verified sign-in and the handle from the agent's own record, never from the request. */
-  async accept(ctx: PrincipalContext, inviteId: string): Promise<{ ok: true }> {
+  async accept(ctx: PrincipalContext, inviteId: string, afterGrant?: (board: string, role: "editor" | "viewer") => Promise<void>): Promise<{ ok: true }> {
     if (!isStoreId(inviteId)) throw new CanvasError("FORBIDDEN", "you may not do this on this board");
+    const invite = afterGrant ? await this.store.get("invites", inviteId) : null;
     const user = await this.store.get("users", ctx.principalId);
     const agent = await this.store.get("principals", ctx.principalId);
     const identity = {
@@ -179,6 +185,12 @@ export class CanvasAccess {
       ...(typeof agent?.handle === "string" ? { handle: agent.handle } : {}),
     };
     await this.sharing.acceptInvite(ctx, word(inviteId, "id"), identity).catch(refuse);
+    if (afterGrant) {
+      if (typeof invite?.resourceId !== "string") throw new CanvasError("UNAVAILABLE", "the accepted invite has no board");
+      // An invite only raises a role. Read the resulting board grant, independent of this credential’s scopes.
+      const writes = await this.allowed({ ...ctx, scopes: ["canvas:admin"] }, "write", invite.resourceId);
+      await afterGrant(invite.resourceId, writes ? "editor" : "viewer");
+    }
     return { ok: true };
   }
 

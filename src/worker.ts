@@ -433,33 +433,39 @@ export function createApp(options: AppOptions = {}): Hono<App> {
 
   // Sharing. Only an owner of the board shares it (the gate above). A link lists without its token: a token shows once.
   api.get("/boards/:id/access", async (c) => c.json(await c.var.access.list(c.var.caller.principal, c.req.param("id"))));
+  const changeLiveRole = async (c: Context<App>, id: string, subjects: string[], role: "owner" | "editor" | "commenter" | "viewer" | null) => {
+    const live = options.live?.(c.env);
+    if (!live) return;
+    let failed = false;
+    for (const subject of subjects) {
+      try {
+        if (role === null || role === "viewer" || role === "commenter") {
+          const revoked = await live.revoke(id, subject);
+          if (role === null && !revoked.stored) failed = true;
+        }
+        // Writers need no cap. A null cap frees a slot and lifts an old ban.
+        if (role !== null && !(await live.updateRole(id, subject, role === "editor" || role === "owner" ? null : role))) failed = true;
+      } catch { failed = true; }
+    }
+    if (failed) throw new CanvasError("UNAVAILABLE", "the room could not apply every role. Ask the owner to retry the grant change");
+  };
   api.post("/boards/:id/grants", async (c) => {
     const id = c.req.param("id");
     const input = await jsonBody(c);
+    if (options.live) await c.var.access.delegationIds(input.subjectId, input.subjectKind);
     const done = await c.var.access.grant(c.var.caller.principal, id, input);
-    if (options.live && typeof input.subjectId === "string") {
-      const live = options.live(c.env);
-      for (const subject of await c.var.access.delegationIds(input.subjectId, input.subjectKind)) {
-        // Close stale roles first. The persistent cap also covers an in-flight join.
-        if (input.role === "viewer" || input.role === "commenter") await live.revoke(id, subject);
-        if (!(await live.updateRole(id, subject, input.role as "owner" | "editor" | "commenter" | "viewer"))) {
-          throw new CanvasError("UNAVAILABLE", "the room could not apply the role. Try again");
-        }
-      }
-    }
+    const subjects = options.live ? await c.var.access.delegationIds(input.subjectId, input.subjectKind) : [];
+    await changeLiveRole(c, id, subjects, input.role as "owner" | "editor" | "commenter" | "viewer");
     return c.json(done);
   });
   api.delete("/boards/:id/grants", async (c) => {
     const id = c.req.param("id");
     const subjectKind = c.req.query("subjectKind");
     const subjectId = c.req.query("subjectId");
+    if (options.live) await c.var.access.delegationIds(subjectId, subjectKind);
     const done = await c.var.access.revoke(c.var.caller.principal, id, { subjectKind, subjectId });
-    if (options.live && subjectId) {
-      const live = options.live(c.env);
-      for (const subject of await c.var.access.delegationIds(subjectId, subjectKind)) {
-        if (!(await live.revoke(id, subject)).stored) throw new CanvasError("UNAVAILABLE", "the room could not retain the revoke. Try again");
-      }
-    }
+    const subjects = options.live ? await c.var.access.delegationIds(subjectId, subjectKind) : [];
+    await changeLiveRole(c, id, subjects, null);
     return c.json(done);
   });
   api.post("/boards/:id/invites", async (c) => c.json(await c.var.access.invite(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));
@@ -467,7 +473,12 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   api.post("/boards/:id/links", async (c) => c.json(await c.var.access.createLink(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));
   api.delete("/boards/:id/links/:link", async (c) => c.json(await c.var.access.revokeLink(c.var.caller.principal, c.req.param("id"), c.req.param("link"))));
   // Not tied to a board: the invite names it. The caller must be the person or agent the invite is for.
-  api.post("/invites/accept", async (c) => c.json(await c.var.access.accept(c.var.caller.principal, text((await jsonBody(c)).id, "id"))));
+  api.post("/invites/accept", async (c) => {
+    const ctx = c.var.caller.principal;
+    const root = ctx.chain[0]!;
+    if (options.live) await c.var.access.delegationIds(root.id, root.kind);
+    return c.json(await c.var.access.accept(ctx, text((await jsonBody(c)).id, "id"), options.live ? async (id, role) => changeLiveRole(c, id, await c.var.access.delegationIds(root.id, root.kind), role) : undefined));
+  });
   api.post("/boards/:id/shapes", async (c) => c.json(await c.var.service.add(c.req.param("id"), await jsonBody(c), c.var.actor), 201));
   api.post("/boards/:id/connectors", async (c) => c.json(await c.var.service.connect(c.req.param("id"), await jsonBody(c), c.var.actor), 201));
   api.post("/boards/:id/flow", async (c) => c.json(await c.var.service.flow(c.req.param("id"), text((await jsonBody(c)).text, "text"), c.var.actor)));

@@ -14,6 +14,7 @@ import { issueCredential, type Store } from "agentic-identity";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createApp } from "./worker.js";
+import { CanvasAccess } from "./access.js";
 
 // Each call writes audit entries to a local D1, and a busy machine is slow.
 vi.setConfig({ testTimeout: 120_000 });
@@ -318,7 +319,7 @@ describe("live rooms", () => {
       return new Response(null, { status: 200, headers: { "sec-websocket-protocol": request.headers.get("sec-websocket-protocol") ?? "" } });
     },
     revoke: async (id: string, who: string) => { closed.push(`${id}:${who}`); return { closed: 1, stored: true }; },
-    updateRole: async () => true,
+    updateRole: async (_id: string, _subject: string, _role: string | null) => true,
     erase: async () => ({ sockets: 0 }),
   };
   const live = createApp({ live: () => room as never });
@@ -384,6 +385,46 @@ describe("live rooms", () => {
     expect((await send(tokens.ada!, "DELETE", "/boards/lv/grants?subjectKind=human&subjectId=dee")).status).toBe(503);
     revoke.mockRestore();
     await send(tokens.ada!, "POST", "/boards/lv/grants", { subjectKind: "human", subjectId: "dee", role: "viewer" });
+  });
+
+  // Failure cases: a full cap table blocks an editor grant; an oversized tree commits a partial change.
+  test("editor grants clear bans even when the role cap table is full", async () => {
+    const cap = vi.spyOn(room, "updateRole").mockImplementation(async (_id, _subject, role) => role === null);
+    try {
+      expect((await send(tokens.bob!, "POST", "/boards/delegated/grants", { subjectKind: "human", subjectId: "ada", role: "editor" })).status).toBe(200);
+      for (const subject of ["ada", "kid", "grandkid"]) expect(cap).toHaveBeenCalledWith("delegated", subject, null);
+    } finally { cap.mockRestore(); }
+  });
+
+  test("a delegation over the live limit fails before the grant changes", async () => {
+    await store.transaction(async tx => {
+      for (let i = 0; i < 100; i++) await tx.put("principals", `wide${i}`, { id: `wide${i}`, kind: "agent_of_human", parentId: "bob", scopes: ["canvas:read"] });
+    });
+    try {
+      expect((await send(tokens.ada!, "POST", "/boards/lv/grants", { subjectKind: "human", subjectId: "bob", role: "editor" })).status).toBe(422);
+      expect((await open(tokens.bob!, "lv")).status).toBe(404);
+    } finally {
+      await store.transaction(async tx => { for (let i = 0; i < 100; i++) await tx.delete("principals", `wide${i}`); });
+    }
+  });
+
+  test("a child created between preflight and the grant change is closed too", async () => {
+    await send(tokens.bob!, "POST", "/boards", { id: "late-board" });
+    await send(tokens.bob!, "POST", "/boards/late-board/grants", { subjectKind: "human", subjectId: "ada", role: "editor" });
+    const walk = CanvasAccess.prototype.delegationIds;
+    const preflight = vi.spyOn(CanvasAccess.prototype, "delegationIds").mockImplementationOnce(async function (this: CanvasAccess, ...args) {
+      const ids = await walk.apply(this, args);
+      await store.transaction(tx => tx.put("principals", "late-child", { id: "late-child", kind: "agent_of_human", parentId: "ada", scopes: ["canvas:read", "canvas:write"] }));
+      return ids;
+    });
+    closed.length = 0;
+    try {
+      expect((await send(tokens.bob!, "POST", "/boards/late-board/grants", { subjectKind: "human", subjectId: "ada", role: "viewer" })).status).toBe(200);
+      expect(closed).toContain("late-board:late-child");
+    } finally {
+      preflight.mockRestore();
+      await store.delete("principals", "late-child");
+    }
   });
 
   test("an encoded path does not move a route out of the gate", async () => {

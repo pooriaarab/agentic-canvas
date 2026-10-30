@@ -4,7 +4,7 @@
 
 **Fixed**
 
-- Close delegated live sessions when an ancestor board grant is revoked or reduced. Apply persistent room caps before the change returns success. A later grant restores access.
+- Close delegated live sessions when an ancestor board grant is revoked or reduced. Apply persistent room caps before the change returns success. A later grant or accepted invite restores access. Bound live access changes to 100 principals before the grant commits, and release room caps for writers.
 
 ## 0.15.4 - 2026-10-30
 
