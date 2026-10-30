@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npx playwright-core install --with-deps chromium
       - run: npm run build
+      - run: node scripts/test-packed-account.mjs
       - run: npm run typecheck
       - run: npm test
       - name: dev smoke

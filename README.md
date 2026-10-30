@@ -242,10 +242,16 @@ The static dev fallback holds no board roles. Its tokens reach every board and c
 A host that runs a person's data export and erase imports `canvasAccount` from `agentic-canvas/account`. It never reads the storage layout.
 
 ```ts
+import { createAccountRegistry } from "agentic-identity/account";
 import { canvasAccount } from "agentic-canvas/account";
-const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
-const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
+
+const registry = createAccountRegistry().register(canvasAccount, { store, saveRoom, eraseRoom });
+const subject = { kind: "agent_of_human" as const, id: "assistant" };
+const { zip, manifest } = await registry.export(subject);
+const report = await registry.erase(subject, store, { actor: operator });
 ```
+
+The host supplies `operator`, a `PrincipalContext` for the person or agent that runs the erase. Use `null` only for an anonymous or unattended erase.
 
 Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. Board ids must still use 1 to 64 ASCII letters, digits, underscores, or hyphens, and must not start and end with two underscores. This rule also applies to custom resource types and external content sources. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Rows of the configured resource type are always selected, so damaged personal data cannot be skipped. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields. Each scan reads the sharing resource for every stored row to check its type. An erase scans the collection, then reads stamped boards again inside transactions. Allow for these reads on large collections.
 
@@ -262,7 +268,7 @@ await canvasAccount.eraseAccount(subject, deps);
 
 For content held outside the Store, give `contentSource: { exportContent(id), eraseContent(id) }`. Both methods return promises. The export method returns JSON; each sole-owned board exports as `{ id, content }`. Content must use arrays and plain objects from the current realm (with `Object.prototype` or a null prototype). The export rejects `undefined` values, functions, symbols, class instances, and non-finite numbers, including nested values. A `toJSON()` method can return supported JSON, so dates export as strings. The erase method deletes its content before sharing records go. This mode ignores `collection` and `isBoard`, does not read or write the content collection, and does not call `saveRoom` or `eraseRoom`. It uses sharing records to find sole-owned boards. It still exports and erases grants, invites, and audit data for the configured resource type. It does not inspect or scrub stamps in shared-board content: the host must handle that data separately. For a room backend, the methods can export room history and delete the room. Methods must tolerate retries, including missing content. A rejected method rejects the account call; earlier changes can remain. Sharing records for a failed content delete stay so a retry can finish. Stop writes during the operation.
 
-The export is plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
+The registry puts each collection in a JSON file in the export zip. The direct contributor export returns plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
 
 - A board that the subject alone owns is deleted with its grants, invites, links, and audit entries. The erase calls `eraseRoom(boardId)` first, as the Worker does.
 - On any other board, the subject's grant and invites go. The elements it made are deleted. A connector of someone else that was bound to one of them goes too, and no count or export lists it. The members of a deleted group move to its parent. The editor of an element it only edited becomes `(erased)`, and a title it set is cleared.
@@ -280,7 +286,6 @@ The export is plain JSON in the collections `boards`, `grants`, `invites`, `auth
   - Image bytes in the image store have no uploader record, so they are not exported or erased. Only the `blob:` key in an element is.
   - A deleted element leaves its id in the stored Yjs history. Its content is gone, and an id that the caller chose can stay in the stored bytes.
   - A connector of someone else that the subject edited, and that goes with a deleted shape, is in `edited_elements` of the export and not in its erase count.
-- The shape is provisional. It is the `AccountPackage` contract that a later `agentic-identity` release adds to `agentic-identity/account`. The `AccountApp` of 0.9.0 is a different contract, and this does not fit it.
 
 ## UI
 

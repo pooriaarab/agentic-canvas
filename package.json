@@ -1,6 +1,6 @@
 {
   "name": "agentic-canvas",
-  "version": "0.15.3",
+  "version": "0.15.4",
   "description": "A shared whiteboard for diagrams, drawn by people and agents.",
   "keywords": [
     "whiteboard",
@@ -80,7 +80,7 @@
     "clean": "rm -rf dist",
     "dev": "npm run build && WRANGLER_SEND_METRICS=false wrangler dev --port 8793 --var CANVAS_REGION:unknown",
     "dev:smoke": "npm run build && node scripts/dev-smoke.mjs 8793 /health --var CANVAS_REGION:unknown",
-    "ci:local": "npm run build && npm run typecheck && npm test && npm run test:e2e",
+    "ci:local": "npm run build && npm run typecheck && npm test && npm run test:e2e && node scripts/test-packed-account.mjs",
     "deploy:demo": "wrangler deploy -c wrangler.demo.jsonc",
     "test:e2e": "playwright test -c e2e/playwright.config.ts"
   },

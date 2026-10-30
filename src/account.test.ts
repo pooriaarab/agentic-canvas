@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import { CanvasAccess } from "./access.js";
 import { canvasAccount } from "./account.js";
+import { createAccountRegistry } from "agentic-identity-current/account";
 import type { Principal } from "./core/principal.js";
 import * as Y from "yjs";
 import { Board } from "./core/board.js";
@@ -67,6 +68,31 @@ async function setup() {
 }
 
 describe("canvasAccount", () => {
+  test.each(["agent", "agent_of_human", "agent_of_agent", "user_token"] as const)("registry exports and erases shared-board stamps for %s", async (kind) => {
+    const { store, service } = await setup();
+    const subject = { kind, id: `subject-${kind}` };
+    await service.add("bobs", { id: "subject-shape", type: "rect", x: 2, y: 3 }, subject);
+    const saved: string[] = [];
+    const reset: string[] = [];
+    const registry = createAccountRegistry().register(canvasAccount, {
+      store,
+      saveRoom: async (id: string) => void saved.push(id),
+      eraseRoom: async (id: string) => void reset.push(id),
+    });
+    const { zip, manifest } = await registry.export(subject);
+    expect(manifest.apps[0]?.files.map((file) => file.path)).toContain("authored_elements.json");
+    expect(new TextDecoder().decode(zip)).toContain("subject-shape");
+    const report = await registry.erase(subject, store, { actor: null });
+    expect(report.ok).toBe(true);
+    expect(report.counts.canvas).toMatchObject({ authored_elements: 1 });
+    expect(saved).toContain("bobs");
+    expect(reset).toContain("bobs");
+    const board = await service.read("bobs");
+    expect(board.nodes.some((node) => node.id === "subject-shape")).toBe(false);
+    expect(board.nodes.find((node) => node.id === "b1")?.author).toEqual(bob);
+    expect((await registry.erase(subject, store, { actor: null })).counts.canvas).toMatchObject({ authored_elements: 0 });
+  });
+
   test("exports what the subject owns, holds, made, and edited, and nothing of others", async () => {
     const { store } = await setup();
     const out = await canvasAccount.exportAccount(ada, { store });
