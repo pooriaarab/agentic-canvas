@@ -29,7 +29,7 @@ export interface CanvasAccountDeps {
   contentSource?: CanvasContentSource;
   /** The Store that holds the boards and the sharing records. */
   store: Store;
-  /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. The call runs for every stored board, so it must be cheap for a board with no room. A board with no room needs no work. Omit it when no room runs. */
+  /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. The call runs only for selected canvas rows, and never with contentSource. It must be cheap for a board with no room. A board with no room needs no work. Omit it when no room runs. */
   saveRoom?: (boardId: string) => Promise<void>;
   /** Erases the live room of a board, so it opens again from the Store. The erase calls it for every board that it changes or deletes. Omit it when no room runs. */
   eraseRoom?: (boardId: string) => Promise<void>;
@@ -216,8 +216,21 @@ export const canvasAccount: CanvasAccount = {
     for (const id of mine.sole) {
       if (deps.contentSource) {
         const content = await deps.contentSource.exportContent(id);
-        if (content === undefined) throw new CanvasError("INVALID", `content source returned no content for board "${id}"`);
-        out.boards.push(...plain([{ id, content }]));
+        // Reject values JSON would silently omit or turn into empty objects.
+        let normalized: Json;
+        try {
+          normalized = JSON.parse(JSON.stringify(content, (_key, value: unknown) => {
+            if (value === undefined || typeof value === "function" || typeof value === "symbol" ||
+                (typeof value === "number" && !Number.isFinite(value)) ||
+                (typeof value === "object" && value !== null && !Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+              throw new Error("not JSON content");
+            }
+            return value;
+          })) as Json;
+        } catch {
+          throw new CanvasError("INVALID", `content source returned invalid JSON for board "${id}"`);
+        }
+        out.boards.push({ id, content: normalized });
       }
       else if (owned.has(id)) out.boards.push(owned.get(id)!);
     }

@@ -299,9 +299,22 @@ describe("account storage options", () => {
   test("normalises source output and refuses missing content", async () => {
     const { store } = await setup();
     const eraseContent = async () => {};
-    await expect(canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => undefined as never, eraseContent } })).rejects.toMatchObject({ code: "INVALID" });
+    for (const content of [undefined, () => {}, Symbol("content"), { toJSON: () => undefined }, new Map([["private", "content"]]), new Set(["private"]), { nested: new Map() }, NaN]) {
+      await expect(canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => content as never, eraseContent } })).rejects.toMatchObject({ code: "INVALID" });
+    }
     const out = await canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => new Date("2026-10-30") as never, eraseContent } });
     expect(out.boards).toEqual([{ id: "mine", content: "2026-10-30T00:00:00.000Z" }]);
+  });
+
+  test("refuses invalid storage options before export or erase changes data", async () => {
+    const { store } = await setup();
+    for (const options of [{ resourceType: " " }, { collection: "" }, { isBoard: true }, { contentSource: {} }, { contentSource: { exportContent: async () => null } }]) {
+      const deps = { store, ...options } as never;
+      await expect(canvasAccount.exportAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      await expect(canvasAccount.eraseAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      expect(await store.get("resources", "mine")).not.toBeNull();
+      expect(await store.get("boards", "mine")).not.toBeNull();
+    }
   });
 
   test("uses renamed resources and collection for export and all erase writes", async () => {
