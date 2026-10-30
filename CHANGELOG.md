@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.2
+
+- The CLI accepts `-h` to print help and exit. The `--h` option still sets shape height.
+
 ## 0.14.1 - 2026-10-29
 
 **Changed**
