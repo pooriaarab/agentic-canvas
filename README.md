@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.14.2. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.14.3. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.

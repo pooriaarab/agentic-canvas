@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.3 - 2026-10-30
+
+**Changed**
+
+- Allow the current releases of the shared design, identity, and realtime packages.
+
 ## 0.14.2
 
 - The CLI accepts `-h` to print help and exit. The `--h` option still sets shape height.
