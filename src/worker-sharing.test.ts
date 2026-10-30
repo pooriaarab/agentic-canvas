@@ -39,6 +39,7 @@ beforeAll(async () => {
     { id: "eve", kind: "human", scopes: ["canvas:admin"] },
     { id: "ro", kind: "human", scopes: ["canvas:read"] },
     { id: "bot", kind: "agent", handle: "robo", scopes: ["canvas:write"] },
+    { id: "grandkid", kind: "agent_of_agent", parentId: "kid", scopes: ["canvas:read", "canvas:write"] },
     { id: "kid", kind: "agent_of_human", parentId: "ada", scopes: ["canvas:read", "canvas:write"] },
   ];
   for (const p of principals) {
@@ -316,7 +317,8 @@ describe("live rooms", () => {
       joined.push({ id: _id, principal: grant.principal.id, role: grant.role });
       return new Response(null, { status: 200, headers: { "sec-websocket-protocol": request.headers.get("sec-websocket-protocol") ?? "" } });
     },
-    revoke: async (id: string, who: string) => { closed.push(`${id}:${who}`); return { closed: 1, stored: false }; },
+    revoke: async (id: string, who: string) => { closed.push(`${id}:${who}`); return { closed: 1, stored: true }; },
+    updateRole: async () => true,
     erase: async () => ({ sockets: 0 }),
   };
   const live = createApp({ live: () => room as never });
@@ -348,6 +350,40 @@ describe("live rooms", () => {
     await send(tokens.ada!, "POST", "/boards/lv/grants", { subjectKind: "human", subjectId: "bob", role: "editor" });
     await send(tokens.ada!, "DELETE", "/boards/lv/grants?subjectKind=human&subjectId=bob");
     expect(closed).toEqual(["lv:dee", "lv:bob"]);
+  });
+
+  test("an ancestor downgrade and revoke close child and grandchild sessions", async () => {
+    await send(tokens.bob!, "POST", "/boards", { id: "delegated" });
+    await send(tokens.bob!, "POST", "/boards/delegated/grants", { subjectKind: "human", subjectId: "ada", role: "editor" });
+    for (const who of ["ada", "kid", "grandkid", "bob"]) expect((await open(tokens[who]!, "delegated")).status).toBe(200);
+    closed.length = 0;
+    expect((await send(tokens.bob!, "POST", "/boards/delegated/grants", { subjectKind: "human", subjectId: "ada", role: "viewer" })).status).toBe(200);
+    expect(closed).toEqual(["delegated:ada", "delegated:kid", "delegated:grandkid"]);
+    for (const who of ["ada", "kid", "grandkid"]) {
+      expect((await open(tokens[who]!, "delegated")).status).toBe(200);
+      expect(joined.at(-1)?.role).toBe("viewer");
+    }
+    closed.length = 0;
+    expect((await send(tokens.bob!, "DELETE", "/boards/delegated/grants?subjectKind=human&subjectId=ada")).status).toBe(200);
+    expect(closed).toEqual(["delegated:ada", "delegated:kid", "delegated:grandkid"]);
+    for (const who of ["ada", "kid", "grandkid"]) expect((await open(tokens[who]!, "delegated")).status).toBe(404);
+    expect((await open(tokens.bob!, "delegated")).status).toBe(200);
+  });
+
+  test("a grant for another subject kind does not close the principal with that id", async () => {
+    closed.length = 0;
+    expect((await send(tokens.ada!, "DELETE", "/boards/lv/grants?subjectKind=agent&subjectId=dee")).status).toBe(200);
+    expect(closed).toEqual([]);
+  });
+
+  test("room failures never report a successful access change", async () => {
+    const cap = vi.spyOn(room, "updateRole").mockResolvedValueOnce(false);
+    expect((await send(tokens.ada!, "POST", "/boards/lv/grants", { subjectKind: "human", subjectId: "dee", role: "viewer" })).status).toBe(503);
+    cap.mockRestore();
+    const revoke = vi.spyOn(room, "revoke").mockResolvedValueOnce({ closed: 1, stored: false });
+    expect((await send(tokens.ada!, "DELETE", "/boards/lv/grants?subjectKind=human&subjectId=dee")).status).toBe(503);
+    revoke.mockRestore();
+    await send(tokens.ada!, "POST", "/boards/lv/grants", { subjectKind: "human", subjectId: "dee", role: "viewer" });
   });
 
   test("an encoded path does not move a route out of the gate", async () => {

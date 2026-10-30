@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.5 - 2026-10-30
+
+**Fixed**
+
+- Close delegated live sessions when an ancestor board grant is revoked or reduced. Apply persistent room caps before the change returns success. A later grant restores access.
+
 ## 0.15.4 - 2026-10-30
 
 **Changed**

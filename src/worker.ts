@@ -437,9 +437,15 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const id = c.req.param("id");
     const input = await jsonBody(c);
     const done = await c.var.access.grant(c.var.caller.principal, id, input);
-    // A socket keeps the role it joined with. A role below editor closes the subject's sockets, so a join again gets the new role.
-    if (options.live && (input.role === "viewer" || input.role === "commenter") && typeof input.subjectId === "string") {
-      await options.live(c.env).revoke(id, input.subjectId).catch((error: unknown) => console.error(JSON.stringify({ level: "error", op: "revoke-room", message: loggable(error) })));
+    if (options.live && typeof input.subjectId === "string") {
+      const live = options.live(c.env);
+      for (const subject of await c.var.access.delegationIds(input.subjectId, input.subjectKind)) {
+        // Close stale roles first. The persistent cap also covers an in-flight join.
+        if (input.role === "viewer" || input.role === "commenter") await live.revoke(id, subject);
+        if (!(await live.updateRole(id, subject, input.role as "owner" | "editor" | "commenter" | "viewer"))) {
+          throw new CanvasError("UNAVAILABLE", "the room could not apply the role. Try again");
+        }
+      }
     }
     return c.json(done);
   });
@@ -448,9 +454,12 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const subjectKind = c.req.query("subjectKind");
     const subjectId = c.req.query("subjectId");
     const done = await c.var.access.revoke(c.var.caller.principal, id, { subjectKind, subjectId });
-    // Close the sockets the subject holds in the room. An agent that acts for the subject keeps its socket until it joins again,
-    // and the gate then refuses it.
-    if (options.live && subjectId) await options.live(c.env).revoke(id, subjectId).catch((error: unknown) => console.error(JSON.stringify({ level: "error", op: "revoke-room", message: loggable(error) })));
+    if (options.live && subjectId) {
+      const live = options.live(c.env);
+      for (const subject of await c.var.access.delegationIds(subjectId, subjectKind)) {
+        if (!(await live.revoke(id, subject)).stored) throw new CanvasError("UNAVAILABLE", "the room could not retain the revoke. Try again");
+      }
+    }
     return c.json(done);
   });
   api.post("/boards/:id/invites", async (c) => c.json(await c.var.access.invite(c.var.caller.principal, c.req.param("id"), await jsonBody(c)), 201));

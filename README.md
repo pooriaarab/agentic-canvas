@@ -548,7 +548,7 @@ The stylesheet is a separate export, `agentic-canvas/ui.css`. Load `agentic-desi
   `canvas` resource and an owner grant with `agentic-identity`.
 - An image is stored under the hash of its bytes, not under a board. Any credential with `canvas:read` can fetch an image if it knows the hash.
 - A link visitor reads the stored board, which a live room saves at its next save. It cannot load `blob:` images.
-- A revoke, or a grant of viewer or commenter, closes the live sockets of the person or agent whose role changed. An agent that acts for that person keeps its socket until it joins again.
+- A board grant revoke, or a grant of viewer or commenter, closes the subject’s live sockets and all delegated descendants. The operation waits for all room changes before it returns success. Persistent room caps cover joins in flight. A downgrade permits read-only reconnects; a revoke denies reconnects. Unrelated sessions stay connected. There is no fixed time bound during a storage outage: the request fails and the owner must retry. A later grant lifts the room restriction. Identity credential revocation outside these board routes does not close existing sockets.
 - A link visitor reads. A link never writes. Links are not listed: the token shows once, at creation.
 - A board holds at most 10,000 elements. A flow holds at most 500 nodes and 2,000
   edges.

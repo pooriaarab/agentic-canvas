@@ -123,6 +123,22 @@ export class CanvasAccess {
     return ids;
   }
 
+  /** The subject and all delegated descendants. Read every page; a cycle visits an id once. */
+  async delegationIds(subjectId: string, subjectKind: unknown): Promise<string[]> {
+    const root = await this.store.get("principals", subjectId);
+    if (root && root.kind !== subjectKind) return [];
+    const ids = new Set([subjectId]);
+    for (const parentId of ids) {
+      let cursor: string | undefined;
+      do {
+        const page = await this.store.query("principals", { where: { parentId }, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
+        for (const child of page.items) ids.add(child.id);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+    }
+    return [...ids];
+  }
+
   async grant(ctx: PrincipalContext, id: string, input: { subjectKind?: unknown; subjectId?: unknown; role?: unknown }): Promise<{ ok: true }> {
     this.known(id);
     const subject: Subject = { kind: oneOf(input.subjectKind, SUBJECT_KINDS, "subjectKind"), id: storeId(input.subjectId, "subjectId") };
