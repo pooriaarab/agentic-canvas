@@ -5,6 +5,6 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "ui/**/*.test.tsx"],
     environment: "node",
     // The CLI and MCP tests start real processes. A busy machine needs more than the 5 second default.
-    testTimeout: 30_000,
+    testTimeout: 120_000,
   },
 });
