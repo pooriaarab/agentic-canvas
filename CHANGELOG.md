@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.1 - 2026-10-30
+
+**Changed**
+
+- Allow the current releases of the shared design, identity, and realtime packages.
+
 ## 0.15.0 - 2026-10-30
 
 **Added**
