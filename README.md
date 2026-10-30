@@ -247,7 +247,7 @@ const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { s
 const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
 ```
 
-Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields.
+Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Rows of the configured resource type are always selected, so damaged personal data cannot be skipped. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields.
 
 ```ts
 const deps = {
@@ -260,7 +260,7 @@ const data = await canvasAccount.exportAccount(subject, deps);
 await canvasAccount.eraseAccount(subject, deps);
 ```
 
-For content held outside the Store, give `contentSource: { exportContent(id), eraseContent(id) }`. Both methods return promises. The export method returns JSON; each sole-owned board exports as `{ id, content }`. The erase method deletes its content before sharing records go. This mode does not read or write the content collection and does not call `saveRoom` or `eraseRoom`. It uses sharing records to find sole-owned boards. It still exports and erases grants, invites, and audit data for the configured resource type. It does not inspect or scrub stamps in shared-board content: the host must handle that data separately. For a room backend, the methods can export room history and delete the room. Methods must tolerate retries, including missing content. A rejected method rejects the account call; earlier changes can remain. Sharing records for a failed content delete stay so a retry can finish. Stop writes during the operation.
+For content held outside the Store, give `contentSource: { exportContent(id), eraseContent(id) }`. Both methods return promises. The export method returns JSON; each sole-owned board exports as `{ id, content }`. The erase method deletes its content before sharing records go. This mode ignores `collection` and `isBoard`, does not read or write the content collection, and does not call `saveRoom` or `eraseRoom`. It uses sharing records to find sole-owned boards. It still exports and erases grants, invites, and audit data for the configured resource type. It does not inspect or scrub stamps in shared-board content: the host must handle that data separately. For a room backend, the methods can export room history and delete the room. Methods must tolerate retries, including missing content. A rejected method rejects the account call; earlier changes can remain. Sharing records for a failed content delete stay so a retry can finish. Stop writes during the operation.
 
 The export is plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
 

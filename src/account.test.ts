@@ -285,6 +285,25 @@ describe("account storage options", () => {
     expect(await store.get("boards", "foreign")).toEqual({ kind: "tasks", update: "not a canvas" });
   });
 
+  test("refuses a known damaged board even when the row predicate excludes it", async () => {
+    const { store } = await setup();
+    await store.put("boards", "mine", { title: "private damaged board" });
+    for (const deps of [{ store }, { store, isBoard: () => false }]) {
+      await expect(canvasAccount.exportAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      await expect(canvasAccount.eraseAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      expect(await store.get("resources", "mine")).not.toBeNull();
+      expect(await store.get("boards", "mine")).toEqual({ title: "private damaged board" });
+    }
+  });
+
+  test("normalises source output and refuses missing content", async () => {
+    const { store } = await setup();
+    const eraseContent = async () => {};
+    await expect(canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => undefined as never, eraseContent } })).rejects.toMatchObject({ code: "INVALID" });
+    const out = await canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => new Date("2026-10-30") as never, eraseContent } });
+    expect(out.boards).toEqual([{ id: "mine", content: "2026-10-30T00:00:00.000Z" }]);
+  });
+
   test("uses renamed resources and collection for export and all erase writes", async () => {
     const { store } = await setup();
     for (const { id, data } of (await store.query("boards", { limit: 100 })).items) {

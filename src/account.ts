@@ -8,6 +8,12 @@ import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/princip
 import { RESOURCE_TYPE } from "./access.js";
 import { fromBase64, isBoardId, toBase64 } from "./service.js";
 
+/** Host-owned whole-board content. Methods must tolerate retries. */
+export interface CanvasContentSource {
+  readonly exportContent: (id: string) => Promise<Json>;
+  readonly eraseContent: (id: string) => Promise<void>;
+}
+
 export interface CanvasAccountDeps {
   /** Sharing resource type. Default: `canvas`. */
   resourceType?: string;
@@ -18,11 +24,9 @@ export interface CanvasAccountDeps {
   /** Whole-board content for sole owners. Replaces collection access and room hooks.
    * Shared-board stamps are outside this mode; the host must handle them separately.
    * Both methods must tolerate retries, including a board already erased.
+   * Ignores collection, isBoard, saveRoom, and eraseRoom when supplied.
    */
-  contentSource?: {
-    exportContent(id: string): Promise<Json>;
-    eraseContent(id: string): Promise<void>;
-  };
+  contentSource?: CanvasContentSource;
   /** The Store that holds the boards and the sharing records. */
   store: Store;
   /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. The call runs for every stored board, so it must be cheap for a board with no room. A board with no room needs no work. Omit it when no room runs. */
@@ -115,9 +119,10 @@ async function* boards(store: Store, deps: CanvasAccountDeps): AsyncGenerator<{ 
     for (const item of page.items) {
       const { id } = item;
       let data = item.data;
-      if (!(deps.isBoard ? deps.isBoard(id, data) : Object.hasOwn(data, "update"))) continue;
       const resource = await store.get("resources", id);
       if (resource !== null && resource.type !== (deps.resourceType ?? RESOURCE_TYPE)) continue;
+      // A known canvas cannot be hidden by a predicate: damaged personal data must fail closed.
+      if (resource === null && !(deps.isBoard ? deps.isBoard(id, data) : Object.hasOwn(data, "update"))) continue;
       if (deps.saveRoom) {
         await deps.saveRoom(id);
         data = (await store.get(collection, id)) ?? data;
@@ -209,7 +214,11 @@ export const canvasAccount: CanvasAccount = {
     }
     // A sole board once, whatever the number of grant rows. A grant with no board behind it (an erase that stopped half way) has nothing to export.
     for (const id of mine.sole) {
-      if (deps.contentSource) out.boards.push({ id, content: await deps.contentSource.exportContent(id) });
+      if (deps.contentSource) {
+        const content = await deps.contentSource.exportContent(id);
+        if (content === undefined) throw new CanvasError("INVALID", `content source returned no content for board "${id}"`);
+        out.boards.push(...plain([{ id, content }]));
+      }
       else if (owned.has(id)) out.boards.push(owned.get(id)!);
     }
     // Invites hold `createdBy` as an id with no kind: ids are unique across kinds in the identity store. The fields are listed, so a new one is not exported by chance.
@@ -259,7 +268,7 @@ export const canvasAccount: CanvasAccount = {
       else {
         await deps.eraseRoom?.(id);
         const row = await store.get(collection, id);
-        if (row && (deps.isBoard ? deps.isBoard(id, row) : Object.hasOwn(row, "update"))) await store.delete(collection, id);
+        if (row) await store.delete(collection, id);
         await deps.eraseRoom?.(id);
       }
       await sharing.deleteResource(ctx, id).catch((e: unknown) => {
