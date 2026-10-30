@@ -2,7 +2,10 @@
 
 ## 0.15.3 - 2026-10-30
 
+**Changed**
+
 - Give board controls named groups with native button focus.
+- Remove the canvas container from the Tab order. Tab reaches its items directly.
 - Check host board focus semantics and contrast in both themes.
 
 ## 0.15.2 - 2026-10-30

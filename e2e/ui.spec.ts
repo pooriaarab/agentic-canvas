@@ -30,7 +30,7 @@ async function signIn(page: Page, token: string) {
 }
 
 async function axe(page: Page) {
-  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+  const result = await new AxeBuilder({ page }).options({ rules: { "focus-order-semantics": { enabled: true } } }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   expect(result.violations.map((v) => `${v.id}: ${v.nodes.map((n) => `${n.target.join(" ")}`).join(", ")}`)).toEqual([]);
 }
 

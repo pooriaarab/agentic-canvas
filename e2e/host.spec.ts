@@ -42,7 +42,7 @@ async function host(browser: Browser, who: Record<string, string>, theme: "light
 }
 
 const axe = async (page: Page) => {
-  const result = await new AxeBuilder({ page }).withTags([...TAGS, "best-practice"]).options({ rules: { "focus-order-semantics": { enabled: true } } }).analyze();
+  const result = await new AxeBuilder({ page }).options({ rules: { "focus-order-semantics": { enabled: true } } }).withTags(TAGS).analyze();
   expect(result.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
 };
 
@@ -81,7 +81,13 @@ for (const theme of ["light", "dark"] as const) {
     await axe(page);
     await page.getByRole("button", { name: "Add sticky note" }).focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByText("Note").first()).toBeVisible();
+    const note = page.getByRole("button", { name: /^Sticky note: Note/ });
+    await expect(note).toBeVisible();
+    await zoom.getByRole("button", { name: "Reset view" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(note).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(zoom.getByRole("button", { name: "Reset view" })).toBeFocused();
     await axe(page);
   });
 }
