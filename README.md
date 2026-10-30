@@ -7,7 +7,7 @@
 
 A shared whiteboard for diagrams, drawn by people and agents.
 
-> Status: 0.14.3. The board model, the agent operations, the exports, the CLI, the
+> Status: 0.15.0. The board model, the agent operations, the exports, the CLI, the
 > MCP server, a small Worker API, and live co-editing work. The CLI, the MCP server,
 > and the SDK can join a live room. A remote client calls the Worker API. A small web UI, served by the Worker, is new in 0.4.0.
 > The package exports `agentic-canvas/ui`, a board view you can mount in your own app, new in 0.5.0.
@@ -246,6 +246,21 @@ import { canvasAccount } from "agentic-canvas/account";
 const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
 const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
 ```
+
+Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. Board ids must still use 1 to 64 ASCII letters, digits, underscores, or hyphens, and must not start and end with two underscores. This rule also applies to custom resource types and external content sources. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Rows of the configured resource type are always selected, so damaged personal data cannot be skipped. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields. Each scan reads the sharing resource for every stored row to check its type. An erase scans the collection, then reads stamped boards again inside transactions. Allow for these reads on large collections.
+
+```ts
+const deps = {
+  store,
+  resourceType: "drawing",
+  collection: "drawings",
+  isBoard: (_id: string, row: Readonly<Record<string, unknown>>) => row.kind === "drawing",
+};
+const data = await canvasAccount.exportAccount(subject, deps);
+await canvasAccount.eraseAccount(subject, deps);
+```
+
+For content held outside the Store, give `contentSource: { exportContent(id), eraseContent(id) }`. Both methods return promises. The export method returns JSON; each sole-owned board exports as `{ id, content }`. Content must use arrays and plain objects from the current realm (with `Object.prototype` or a null prototype). The export rejects `undefined` values, functions, symbols, class instances, and non-finite numbers, including nested values. A `toJSON()` method can return supported JSON, so dates export as strings. The erase method deletes its content before sharing records go. This mode ignores `collection` and `isBoard`, does not read or write the content collection, and does not call `saveRoom` or `eraseRoom`. It uses sharing records to find sole-owned boards. It still exports and erases grants, invites, and audit data for the configured resource type. It does not inspect or scrub stamps in shared-board content: the host must handle that data separately. For a room backend, the methods can export room history and delete the room. Methods must tolerate retries, including missing content. A rejected method rejects the account call; earlier changes can remain. Sharing records for a failed content delete stay so a retry can finish. Stop writes during the operation.
 
 The export is plain JSON in the collections `boards`, `grants`, `invites`, `authored_elements`, `edited_elements`, `titles`, and `audit`. It has no format or time. The erase returns a count for each name.
 

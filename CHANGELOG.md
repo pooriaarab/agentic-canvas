@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.0 - 2026-10-30
+
+**Added**
+
+- Configure account resource types, content collections, and row selection. Use a content source to export and erase sole-owned content outside the Store. The default collection path keeps shared-board stamp cleanup.
+
+**Changed**
+
+- Account scans skip rows with neither a sharing record nor an `update` field; these rows previously stopped the call as damaged content.
+
 ## 0.14.3 - 2026-10-30
 
 **Changed**

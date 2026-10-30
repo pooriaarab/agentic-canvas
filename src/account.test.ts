@@ -270,3 +270,99 @@ describe("canvasAccount", () => {
     }
   });
 });
+
+// Configurable storage failure cases: foreign rows reach the decoder; renamed
+// resources lose grants/audit; source failures remove retry state; source mode
+// reads collection rows or resets rooms despite the host owning their content.
+describe("account storage options", () => {
+  test("skips foreign rows by default and with a host predicate", async () => {
+    const { store } = await setup();
+    await store.put("boards", "foreign", { title: "A task board" });
+    expect((await canvasAccount.exportAccount(ada, { store })).boards).toHaveLength(1);
+    await store.put("boards", "foreign", { kind: "tasks", update: "not a canvas" });
+    const deps = { store, isBoard: (_id: string, row: Readonly<Record<string, unknown>>) => row.kind !== "tasks" };
+    await canvasAccount.eraseAccount(ada, deps);
+    expect(await store.get("boards", "foreign")).toEqual({ kind: "tasks", update: "not a canvas" });
+  });
+
+  test("refuses a known damaged board even when the row predicate excludes it", async () => {
+    const { store } = await setup();
+    await store.put("boards", "mine", { title: "private damaged board" });
+    for (const deps of [{ store }, { store, isBoard: () => false }]) {
+      await expect(canvasAccount.exportAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      await expect(canvasAccount.eraseAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      expect(await store.get("resources", "mine")).not.toBeNull();
+      expect(await store.get("boards", "mine")).toEqual({ title: "private damaged board" });
+    }
+  });
+
+  test("normalises source output and refuses missing content", async () => {
+    const { store } = await setup();
+    const eraseContent = async () => {};
+    for (const content of [undefined, () => {}, Symbol("content"), { toJSON: () => undefined }, new Map([["private", "content"]]), new Set(["private"]), { nested: new Map() }, NaN]) {
+      await expect(canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => content as never, eraseContent } })).rejects.toMatchObject({ code: "INVALID" });
+    }
+    const out = await canvasAccount.exportAccount(ada, { store, contentSource: { exportContent: async () => new Date("2026-10-30") as never, eraseContent } });
+    expect(out.boards).toEqual([{ id: "mine", content: "2026-10-30T00:00:00.000Z" }]);
+  });
+
+  test("refuses invalid storage options before export or erase changes data", async () => {
+    const { store } = await setup();
+    for (const options of [{ resourceType: " " }, { collection: "" }, { isBoard: true }, { contentSource: {} }, { contentSource: { exportContent: async () => null } }]) {
+      const deps = { store, ...options } as never;
+      await expect(canvasAccount.exportAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      await expect(canvasAccount.eraseAccount(ada, deps)).rejects.toMatchObject({ code: "INVALID" });
+      expect(await store.get("resources", "mine")).not.toBeNull();
+      expect(await store.get("boards", "mine")).not.toBeNull();
+    }
+  });
+
+  test("uses renamed resources and collection for export and all erase writes", async () => {
+    const { store } = await setup();
+    for (const { id, data } of (await store.query("boards", { limit: 100 })).items) {
+      await store.put("canvases", id, { ...data, kind: "drawing" });
+      await store.delete("boards", id);
+      const resource = (await store.get("resources", id))!;
+      await store.put("resources", id, { ...resource, type: "drawing" });
+    }
+    const deps = { store, resourceType: "drawing", collection: "canvases", isBoard: (_id: string, data: Readonly<Record<string, unknown>>) => data.kind === "drawing" };
+    const out = await canvasAccount.exportAccount(ada, deps);
+    expect(out.boards).toHaveLength(1);
+    expect(out.grants).toHaveLength(3);
+    expect(out.invites).toHaveLength(2);
+    expect(out.audit.length).toBeGreaterThan(0);
+    expect(await canvasAccount.eraseAccount(ada, deps)).toMatchObject({ boards: 1, authored_elements: 4 });
+    expect(await store.get("canvases", "mine")).toBeNull();
+    expect(await store.get("canvases", "bobs")).toMatchObject({ kind: "drawing" });
+    expect(Object.values(await canvasAccount.exportAccount(ada, deps)).flat()).toEqual([]);
+  });
+
+  test("exports source content, propagates partial failure, and retries before deleting sharing", async () => {
+    const { store } = await setup();
+    const erased: string[] = [];
+    let fail = true;
+    const deps = {
+      store,
+      saveRoom: async () => { throw new Error("unexpected room save"); },
+      eraseRoom: async () => { throw new Error("unexpected room reset"); },
+      contentSource: {
+        exportContent: async (id: string) => ({ history: [id, "room edit"] }),
+        eraseContent: async (id: string) => {
+          erased.push(id);
+          if (fail) throw new Error("room unavailable");
+        },
+      },
+    };
+    await store.put("boards", "bad", { update: "invalid" });
+    expect((await canvasAccount.exportAccount(ada, deps)).boards).toEqual([{ id: "mine", content: { history: ["mine", "room edit"] } }]);
+    await expect(canvasAccount.eraseAccount(ada, deps)).rejects.toThrow("room unavailable");
+    expect(await store.get("resources", "mine")).not.toBeNull();
+    expect(await store.get("grants", "mine:human:ada")).not.toBeNull();
+    fail = false;
+    expect(await canvasAccount.eraseAccount(ada, deps)).toMatchObject({ boards: 1, grants: 3 });
+    expect(erased).toEqual(["mine", "mine"]);
+    expect(await store.get("boards", "mine")).not.toBeNull();
+    expect(await store.get("resources", "mine")).toBeNull();
+    expect(await canvasAccount.eraseAccount(ada, deps)).toMatchObject({ boards: 0 });
+  });
+});

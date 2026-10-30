@@ -8,10 +8,28 @@ import { PRINCIPAL_KINDS, principalSchema, type Principal } from "./core/princip
 import { RESOURCE_TYPE } from "./access.js";
 import { fromBase64, isBoardId, toBase64 } from "./service.js";
 
+/** Host-owned whole-board content. Methods must tolerate retries. */
+export interface CanvasContentSource {
+  readonly exportContent: (id: string) => Promise<Json>;
+  readonly eraseContent: (id: string) => Promise<void>;
+}
+
 export interface CanvasAccountDeps {
+  /** Sharing resource type. Default: `canvas`. */
+  resourceType?: string;
+  /** Serialized board collection. Default: `boards`. */
+  collection?: string;
+  /** Select canvas rows before decoding or saving rooms. Default: rows with an `update` field. */
+  isBoard?: (id: string, data: Readonly<Record<string, unknown>>) => boolean;
+  /** Whole-board content for sole owners. Replaces collection access and room hooks.
+   * Shared-board stamps are outside this mode; the host must handle them separately.
+   * Both methods must tolerate retries, including a board already erased.
+   * Ignores collection, isBoard, saveRoom, and eraseRoom when supplied.
+   */
+  contentSource?: CanvasContentSource;
   /** The Store that holds the boards and the sharing records. */
   store: Store;
-  /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. The call runs for every stored board, so it must be cheap for a board with no room. A board with no room needs no work. Omit it when no room runs. */
+  /** Saves the live room of a board to the Store, as the Worker does before it reads a board. Without it, edits that no request has saved yet are not seen, and an erase that resets a room drops them. The call runs only for selected canvas rows, and never with contentSource. It must be cheap for a board with no room. A board with no room needs no work. Omit it when no room runs. */
   saveRoom?: (boardId: string) => Promise<void>;
   /** Erases the live room of a board, so it opens again from the Store. The erase calls it for every board that it changes or deletes. Omit it when no room runs. */
   eraseRoom?: (boardId: string) => Promise<void>;
@@ -61,6 +79,9 @@ const plain = (value: unknown): Json[] => JSON.parse(JSON.stringify(value)) as J
 function check(subject: Principal, deps: CanvasAccountDeps): void {
   if (typeof deps?.store?.query !== "function") throw new CanvasError("INVALID", "canvasAccount needs deps.store");
   for (const hook of [deps.saveRoom, deps.eraseRoom]) if (hook !== undefined && typeof hook !== "function") throw new CanvasError("INVALID", "deps.saveRoom and deps.eraseRoom must be functions");
+  for (const value of [deps.resourceType, deps.collection]) if (value !== undefined && (typeof value !== "string" || !value.trim())) throw new CanvasError("INVALID", "resourceType and collection must be nonempty strings");
+  if (deps.isBoard !== undefined && typeof deps.isBoard !== "function") throw new CanvasError("INVALID", "isBoard must be a function");
+  if (deps.contentSource !== undefined && (typeof deps.contentSource?.exportContent !== "function" || typeof deps.contentSource?.eraseContent !== "function")) throw new CanvasError("INVALID", "contentSource needs exportContent and eraseContent");
   // Every principal kind may stamp an element or an audit entry, so every kind is a subject. A kind that holds no role has no grants.
   if (!principalSchema.safeParse(subject).success) throw new CanvasError("INVALID", "subject needs an id and a known kind");
 }
@@ -68,7 +89,7 @@ function check(subject: Principal, deps: CanvasAccountDeps): void {
 interface Held { grantId: string; resourceId: string; role: string }
 
 /** The boards the subject holds a role on, and which of them it alone owns. */
-async function held(store: Store, subject: Principal): Promise<{ all: Held[]; sole: Set<string> }> {
+async function held(store: Store, subject: Principal, resourceType: string): Promise<{ all: Held[]; sole: Set<string> }> {
   const all: Held[] = [];
   const sole = new Set<string>();
   for await (const { id: grantId, data } of pages(store, "grants", { subjectKind: subject.kind, subjectId: subject.id })) {
@@ -77,7 +98,7 @@ async function held(store: Store, subject: Principal): Promise<{ all: Held[]; so
     if (typeof id !== "string" || typeof role !== "string" || !(ROLES as readonly string[]).includes(role)) throw new CanvasError("INVALID", `grant "${grantId}" of the subject is damaged`);
     const resource = await store.get("resources", id);
     // A grant with no resource is what an erase that stopped half way leaves. A resource of another type is another app's.
-    if (resource === null ? !isBoardId(id) : resource.type !== RESOURCE_TYPE) continue;
+    if (resource === null ? !isBoardId(id) : resource.type !== resourceType) continue;
     all.push({ grantId, resourceId: id, role });
     if (resource === null || role !== "owner") continue;
     const owners = await rows(store, "grants", { resourceId: id, role: "owner" });
@@ -89,16 +110,22 @@ async function held(store: Store, subject: Principal): Promise<{ all: Held[]; so
 }
 
 /** Every stored board, one page at a time. A board that does not decode stops the call: it may hold the subject's data. */
-async function* boards(store: Store, saveRoom?: (boardId: string) => Promise<void>): AsyncGenerator<{ id: string; board: Board }> {
+async function* boards(store: Store, deps: CanvasAccountDeps): AsyncGenerator<{ id: string; board: Board }> {
+  if (deps.contentSource) return;
+  const collection = deps.collection ?? "boards";
   let cursor: string | undefined;
   do {
-    const page = await store.query("boards", { limit: PAGE, ...(cursor === undefined ? {} : { cursor }) });
+    const page = await store.query(collection, { limit: PAGE, ...(cursor === undefined ? {} : { cursor }) });
     for (const item of page.items) {
       const { id } = item;
       let data = item.data;
-      if (saveRoom) {
-        await saveRoom(id);
-        data = (await store.get("boards", id)) ?? data;
+      const resource = await store.get("resources", id);
+      if (resource !== null && resource.type !== (deps.resourceType ?? RESOURCE_TYPE)) continue;
+      // A known canvas cannot be hidden by a predicate: damaged personal data must fail closed.
+      if (resource === null && !(deps.isBoard ? deps.isBoard(id, data) : Object.hasOwn(data, "update"))) continue;
+      if (deps.saveRoom) {
+        await deps.saveRoom(id);
+        data = (await store.get(collection, id)) ?? data;
       }
       try {
         yield { id, board: Board.open(fromBase64(String(data.update))) };
@@ -113,7 +140,7 @@ async function* boards(store: Store, saveRoom?: (boardId: string) => Promise<voi
 const isSubject = (value: unknown, subject: Principal) => typeof value === "object" && value !== null && (value as Principal).kind === subject.kind && (value as Principal).id === subject.id;
 
 /** The audit entries about the subject on a canvas board: the subject acted, acted through the chain it roots, or was the target of a grant. A host with other apps on the Store keeps their entries. */
-async function auditOf(store: Store, subject: Principal): Promise<{ id: string; data: Record<string, unknown> }[]> {
+async function auditOf(store: Store, subject: Principal, resourceType: string): Promise<{ id: string; data: Record<string, unknown> }[]> {
   const found = new Map<string, { id: string; data: Record<string, unknown> }>();
   for (const field of ["principalId", "rootId", "targetId"]) for (const row of await rows(store, "audit", { [field]: subject.id })) found.set(row.id, row);
   const out: { id: string; data: Record<string, unknown> }[] = [];
@@ -123,7 +150,7 @@ async function auditOf(store: Store, subject: Principal): Promise<{ id: string; 
     if (typeof resourceId !== "string" || !isBoardId(resourceId)) continue;
     // A deleted board has no sharing record, and its entries still count. Only a record of another type clears a row.
     const resource = await store.get("resources", resourceId);
-    if (resource !== null && resource.type !== RESOURCE_TYPE) continue;
+    if (resource !== null && resource.type !== resourceType) continue;
     // A row that names the subject by id, with a kind we do not know, may be the subject's: stop and do not report an erase that left it.
     // A link visitor is "anonymous". A target that is no principal is an invite, a link, a person, or an app.
     const first = Array.isArray(chain) ? (chain[0] as { id?: unknown; kind?: unknown } | null) : null;
@@ -138,14 +165,14 @@ async function auditOf(store: Store, subject: Principal): Promise<{ id: string; 
 }
 
 /** The invites the subject made on a canvas board. An invite on a resource of another type is another app's. */
-async function invitesOf(store: Store, subject: Principal): Promise<{ id: string; data: Record<string, unknown> }[]> {
+async function invitesOf(store: Store, subject: Principal, resourceType: string): Promise<{ id: string; data: Record<string, unknown> }[]> {
   const out: { id: string; data: Record<string, unknown> }[] = [];
   for (const row of await rows(store, "invites", { createdBy: subject.id })) {
     const { resourceId } = row.data;
     if (typeof resourceId !== "string") throw new CanvasError("INVALID", `invite "${row.id}" of the subject is damaged`);
     if (!isBoardId(resourceId)) continue;
     const resource = await store.get("resources", resourceId);
-    if (resource === null || resource.type === RESOURCE_TYPE) out.push(row);
+    if (resource === null || resource.type === resourceType) out.push(row);
   }
   return out;
 }
@@ -167,10 +194,11 @@ export const canvasAccount: CanvasAccount = {
   async exportAccount(subject, deps) {
     check(subject, deps);
     const { store } = deps;
+    const resourceType = deps.resourceType ?? RESOURCE_TYPE;
     const out: Record<CanvasCollection, Json[]> = { boards: [], grants: [], invites: [], authored_elements: [], edited_elements: [], titles: [], audit: [] };
-    const mine = await held(store, subject);
+    const mine = await held(store, subject, resourceType);
     const owned = new Map<string, Json>();
-    for await (const { id, board } of boards(store, deps.saveRoom)) {
+    for await (const { id, board } of boards(store, deps)) {
       if (mine.sole.has(id)) {
         // Every stored entry as it is: the read model cuts images and groups, and the erase deletes the whole board.
         owned.set(id, plain([{ id, title: board.title, elements: board.rawElements() }])[0]!);
@@ -185,27 +213,49 @@ export const canvasAccount: CanvasAccount = {
       out.grants.push(...plain([{ resourceId: g.resourceId, subjectKind: subject.kind, subjectId: subject.id, role: g.role }]));
     }
     // A sole board once, whatever the number of grant rows. A grant with no board behind it (an erase that stopped half way) has nothing to export.
-    for (const id of mine.sole) if (owned.has(id)) out.boards.push(owned.get(id)!);
+    for (const id of mine.sole) {
+      if (deps.contentSource) {
+        const content = await deps.contentSource.exportContent(id);
+        // Reject values JSON would silently omit or turn into empty objects.
+        let normalized: Json;
+        try {
+          normalized = JSON.parse(JSON.stringify(content, (_key, value: unknown) => {
+            if (value === undefined || typeof value === "function" || typeof value === "symbol" ||
+                (typeof value === "number" && !Number.isFinite(value)) ||
+                (typeof value === "object" && value !== null && !Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+              throw new Error("not JSON content");
+            }
+            return value;
+          })) as Json;
+        } catch {
+          throw new CanvasError("INVALID", `content source returned invalid JSON for board "${id}"`);
+        }
+        out.boards.push({ id, content: normalized });
+      }
+      else if (owned.has(id)) out.boards.push(owned.get(id)!);
+    }
     // Invites hold `createdBy` as an id with no kind: ids are unique across kinds in the identity store. The fields are listed, so a new one is not exported by chance.
-    for (const { id, data } of await invitesOf(store, subject)) {
+    for (const { id, data } of await invitesOf(store, subject, resourceType)) {
       const { resourceId, role, expiresAt, acceptedAt, revokedAt } = data;
       out.invites.push(...plain([{ id, resourceId, role, expiresAt, acceptedAt, revokedAt }]));
     }
-    out.audit.push(...plain((await auditOf(store, subject)).map((r) => r.data)));
+    out.audit.push(...plain((await auditOf(store, subject, resourceType)).map((r) => r.data)));
     return out;
   },
 
   async eraseAccount(subject, deps) {
     check(subject, deps);
     const { store } = deps;
+    const resourceType = deps.resourceType ?? RESOURCE_TYPE;
+    const collection = deps.collection ?? "boards";
     const sharing = createSharing(store);
     const total: Record<CanvasCollection, number> = { boards: 0, grants: 0, invites: 0, authored_elements: 0, edited_elements: 0, titles: 0, audit: 0 };
-    const ctx: PrincipalContext = { principalId: subject.id, kind: subject.kind, chain: [{ id: subject.id, kind: subject.kind }], scopes: [`${RESOURCE_TYPE}:admin`] };
-    const mine = await held(store, subject);
+    const ctx: PrincipalContext = { principalId: subject.id, kind: subject.kind, chain: [{ id: subject.id, kind: subject.kind }], scopes: [`${resourceType}:admin`] };
+    const mine = await held(store, subject, resourceType);
 
     // Scan every board before the first change: a board that does not decode stops the call with nothing done.
     const stamped: string[] = [];
-    for await (const { id, board } of boards(store, deps.saveRoom)) {
+    for await (const { id, board } of boards(store, deps)) {
       if (mine.sole.has(id)) continue;
       const found = board.stampedBy(subject);
       if (found.authored.length > 0 || found.edited.length > 0 || found.titleBy) stamped.push(id);
@@ -217,19 +267,23 @@ export const canvasAccount: CanvasAccount = {
       if (!(await sharing.can(ctx, "admin", id)).allowed) throw new CanvasError("INVALID", `the owner grant on board "${id}" is not valid: an operator repairs it first`);
     }
     // Audit first: the entries of a board that goes below are removed with it, and a repeat after a failure still finds the rest.
-    for (const { id, data } of await auditOf(store, subject)) {
+    for (const { id, data } of await auditOf(store, subject, resourceType)) {
       await store.put("audit", id, scrub(data, subject) as Record<string, Json>);
       total.audit += 1;
     }
-    for (const { id } of await invitesOf(store, subject)) {
+    for (const { id } of await invitesOf(store, subject, resourceType)) {
       await store.delete("invites", id);
       total.invites += 1;
     }
     for (const id of mine.sole) {
       // The room, then the board, then the room again for a client that joined in between, then the sharing records, as the Worker does.
-      await deps.eraseRoom?.(id);
-      await store.delete("boards", id);
-      await deps.eraseRoom?.(id);
+      if (deps.contentSource) await deps.contentSource.eraseContent(id);
+      else {
+        await deps.eraseRoom?.(id);
+        const row = await store.get(collection, id);
+        if (row) await store.delete(collection, id);
+        await deps.eraseRoom?.(id);
+      }
       await sharing.deleteResource(ctx, id).catch((e: unknown) => {
         if (e instanceof Error && (e.name === "EraseRefusedError" || e.message === "forbidden")) throw new CanvasError("INVALID", e.message);
         throw e;
@@ -239,7 +293,7 @@ export const canvasAccount: CanvasAccount = {
     for (const id of stamped) {
       // The board is read again inside the transaction, so a save between the scan and here is not lost.
       const done = await store.transaction(async (tx) => {
-        const doc = await tx.get("boards", id);
+        const doc = await tx.get(collection, id);
         if (!doc) return null;
         let board: Board;
         try {
@@ -248,7 +302,7 @@ export const canvasAccount: CanvasAccount = {
           throw new CanvasError("INVALID", `stored board "${id}" is damaged`);
         }
         const counts = board.eraseStamps(subject, { kind: subject.kind, id: ERASED });
-        await tx.put("boards", id, { update: toBase64(board.encode()) });
+        await tx.put(collection, id, { ...doc, update: toBase64(board.encode()) });
         return counts;
       });
       // Reset the room, so it opens again from the erased state.
