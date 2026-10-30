@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.3 - 2026-10-30
+
+- Give board controls named groups with native button focus.
+- Check host board focus semantics and contrast in both themes.
+
 ## 0.15.2 - 2026-10-30
 
 **Changed**

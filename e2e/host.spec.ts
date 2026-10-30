@@ -6,6 +6,7 @@ import { build } from "esbuild";
 // - an edit in the UI does not reach the host's document, or a peer's edit does not show
 // - the page calls the package API in host mode
 // - unmount drops the host's document
+// - a toolbar container adds a tab stop, or a named button cannot be reached
 // - the board on a host page has an axe violation of WCAG 2.2 AA in light or dark
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -41,7 +42,7 @@ async function host(browser: Browser, who: Record<string, string>, theme: "light
 }
 
 const axe = async (page: Page) => {
-  const result = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  const result = await new AxeBuilder({ page }).withTags([...TAGS, "best-practice"]).options({ rules: { "focus-order-semantics": { enabled: true } } }).analyze();
   expect(result.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
 };
 
@@ -62,8 +63,24 @@ test("a host page edits its own document, sees a peer's edit, calls no API, and 
 for (const theme of ["light", "dark"] as const) {
   test(`the host board has no axe violation in the ${theme} theme`, async ({ browser }) => {
     const page = await host(browser, { name: "Ada" }, theme);
+    // The groups label their native buttons without adding container tab stops.
+    const palette = page.getByRole("group", { name: "Shape palette", exact: true });
+    const zoom = page.getByRole("group", { name: "Zoom and pan", exact: true });
+    for (const group of [palette, zoom]) {
+      expect(await group.evaluate((el) => (el as HTMLElement).tabIndex)).toBe(-1);
+    }
+    const buttons = [...await palette.getByRole("button").all(), ...await zoom.getByRole("button").all()];
+    await page.keyboard.press("Tab");
+    for (const button of buttons) {
+      await expect(button).toBeFocused();
+      await expect(button).toHaveAccessibleName(/\S/);
+      await page.keyboard.press("Tab");
+    }
+    await page.keyboard.press("Shift+Tab");
+    await expect(buttons.at(-1)!).toBeFocused();
     await axe(page);
-    await page.getByRole("button", { name: "Add sticky note" }).click();
+    await page.getByRole("button", { name: "Add sticky note" }).focus();
+    await page.keyboard.press("Enter");
     await expect(page.getByText("Note").first()).toBeVisible();
     await axe(page);
   });

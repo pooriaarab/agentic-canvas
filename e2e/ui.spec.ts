@@ -126,11 +126,11 @@ test("the keyboard moves, resizes, deletes, and clears", async ({ page }) => {
   // Both toolbars come before the canvas, so Tab reaches them before any item.
   const order = await page.evaluate(() => {
     const canvas = document.querySelector(".canvas")!;
-    return ["Shape palette", "Zoom and pan"].map((name) => !!(document.querySelector(`[role=toolbar][aria-label="${name}"]`)!.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING));
+    return ["Shape palette", "Zoom and pan"].map((name) => !!(document.querySelector(`[role=group][aria-label="${name}"]`)!.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toEqual([true, true]);
   // The palette buttons are enabled for an editor, so a keyboard user can use them.
-  await expect(page.getByRole("toolbar", { name: "Shape palette" }).getByRole("button", { name: "Add rectangle" })).toBeEnabled();
+  await expect(page.getByRole("group", { name: "Shape palette" }).getByRole("button", { name: "Add rectangle" })).toBeEnabled();
   await page.locator(".canvas").focus();
   await page.keyboard.press("Tab");
   await expect(item(page, "Rectangle: First")).toBeFocused();
