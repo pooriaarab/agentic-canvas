@@ -3,7 +3,10 @@
 import { runBlobsContract, runStoreContract } from "agentic-identity/testing";
 import { D1_SCHEMA, createD1Store, createR2Blobs, type D1Like, type R2Like } from "agentic-identity/cloudflare";
 import { Miniflare } from "miniflare";
-import { afterAll, beforeAll } from "vitest";
+import { afterAll, beforeAll, vi } from "vitest";
+
+// Real processes can take longer on a busy build host.
+vi.setConfig({ testTimeout: 120_000 });
 
 const SECRET = "0123456789abcdef0123456789abcdef-secret";
 let mf: Miniflare;

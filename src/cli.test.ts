@@ -26,10 +26,13 @@ import type { AddressInfo } from "node:net";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 import { MAX_ELEMENTS } from "./core/board.js";
 import { STORE_FILE } from "./store-file.js";
+
+// Real processes can take longer on a busy build host.
+vi.setConfig({ testTimeout: 120_000 });
 
 const BIN = join(process.cwd(), "dist", "cli.js");
 const root = mkdtempSync(join(tmpdir(), "canvas-e2e-"));

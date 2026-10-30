@@ -247,7 +247,7 @@ const data = await canvasAccount.exportAccount({ kind: "human", id: "ada" }, { s
 const counts = await canvasAccount.eraseAccount({ kind: "human", id: "ada" }, { store, saveRoom, eraseRoom });
 ```
 
-Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. Board ids must still use 1 to 64 ASCII letters, digits, underscores, or hyphens, and must not start and end with two underscores. This rule also applies to custom resource types and external content sources. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Rows of the configured resource type are always selected, so damaged personal data cannot be skipped. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields.
+Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. Board ids must still use 1 to 64 ASCII letters, digits, underscores, or hyphens, and must not start and end with two underscores. This rule also applies to custom resource types and external content sources. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Rows of the configured resource type are always selected, so damaged personal data cannot be skipped. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields. Each scan reads the sharing resource for every stored row to check its type. An erase scans the collection, then reads stamped boards again inside transactions. Allow for these reads on large collections.
 
 ```ts
 const deps = {
