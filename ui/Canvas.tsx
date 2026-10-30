@@ -181,7 +181,7 @@ export function Canvas({ data, selected, editable, view, onView, onSelect, onMov
     ) : null;
 
   return (
-    <div ref={box} className="canvas" role="group" aria-label="Board canvas. Tab moves between items. Arrow keys move the selected item, Shift with arrows resizes it, Delete removes it, Escape clears the selection." tabIndex={0} onKeyDown={key} onPointerMove={track} onPointerUp={end} onPointerCancel={end}>
+    <div ref={box} className="canvas" role="group" aria-label="Board canvas. Tab moves between items. Arrow keys move the selected item, Shift with arrows resizes it, Delete removes it, Escape clears the selection." tabIndex={-1} onKeyDown={key} onPointerMove={track} onPointerUp={end} onPointerCancel={end}>
       <svg width="100%" height="100%" onPointerDown={(e) => begin(e, "pan")}>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" className="arrowhead" /></marker>

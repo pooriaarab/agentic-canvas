@@ -1,4 +1,4 @@
-import { Button, EmptyState, Input, PresenceChip, PresenceStack, Select, Textarea, Toolbar, ToolbarButton, ToolbarSeparator, useToast, type PresenceEntry } from "agentic-design/react";
+import { Button, EmptyState, IconButton, Input, PresenceChip, PresenceStack, Select, Textarea, useToast, type PresenceEntry } from "agentic-design/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { ShapeType } from "../src/core/board";
 import { Board } from "../src/core/board";
@@ -244,24 +244,25 @@ export function BoardView({ id, client: remote, host, room: roomOptions, me, bac
       {!editable && <p className="note">{host ? "This board is read only." : "This token can read the board but not change it."}</p>}
       <div className="stage">
         <div className="surface" ref={canvasBox}>
+          {/* Named groups keep Tab on the buttons, without a focusable composite container. */}
           <div className="palette">
-            <Toolbar label="Shape palette">
+            <div className="agd-toolbar" role="group" aria-label="Shape palette">
               {TOOLS.map((t) => (
-                <ToolbarButton key={t.type} label={t.text} icon={t.icon} disabled={!editable} onClick={() => add(t.type)} />
+                <IconButton size="sm" key={t.type} label={t.text} icon={t.icon} disabled={!editable} onClick={() => add(t.type)} />
               ))}
-            </Toolbar>
+            </div>
           </div>
           <div className="zoom">
-            <Toolbar label="Zoom and pan">
-              <ToolbarButton label="Zoom out" icon={icon(<path d="M4 10h12" />)} onClick={() => zoom(1 / 1.25)} />
-              <ToolbarButton label="Zoom in" icon={icon(<path d="M4 10h12M10 4v12" />)} onClick={() => zoom(1.25)} />
-              <ToolbarSeparator />
-              <ToolbarButton label="Pan left" icon={icon(<path d="M12 4l-6 6 6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x + PAN_STEP }))} />
-              <ToolbarButton label="Pan right" icon={icon(<path d="M8 4l6 6-6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x - PAN_STEP }))} />
-              <ToolbarButton label="Pan up" icon={icon(<path d="M4 12l6-6 6 6" />)} onClick={() => setView((v) => ({ ...v, y: v.y + PAN_STEP }))} />
-              <ToolbarButton label="Pan down" icon={icon(<path d="M4 8l6 6 6-6" />)} onClick={() => setView((v) => ({ ...v, y: v.y - PAN_STEP }))} />
-              <ToolbarButton label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView(HOME)} />
-            </Toolbar>
+            <div className="agd-toolbar" role="group" aria-label="Zoom and pan">
+              <IconButton size="sm" label="Zoom out" icon={icon(<path d="M4 10h12" />)} onClick={() => zoom(1 / 1.25)} />
+              <IconButton size="sm" label="Zoom in" icon={icon(<path d="M4 10h12M10 4v12" />)} onClick={() => zoom(1.25)} />
+              <span className="agd-toolbar__separator" aria-hidden="true" />
+              <IconButton size="sm" label="Pan left" icon={icon(<path d="M12 4l-6 6 6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x + PAN_STEP }))} />
+              <IconButton size="sm" label="Pan right" icon={icon(<path d="M8 4l6 6-6 6" />)} onClick={() => setView((v) => ({ ...v, x: v.x - PAN_STEP }))} />
+              <IconButton size="sm" label="Pan up" icon={icon(<path d="M4 12l6-6 6 6" />)} onClick={() => setView((v) => ({ ...v, y: v.y + PAN_STEP }))} />
+              <IconButton size="sm" label="Pan down" icon={icon(<path d="M4 8l6 6 6-6" />)} onClick={() => setView((v) => ({ ...v, y: v.y - PAN_STEP }))} />
+              <IconButton size="sm" label="Reset view" icon={icon(<path d="M4 4h5M4 4v5M16 16h-5M16 16v-5" />)} onClick={() => setView(HOME)} />
+            </div>
           </div>
           <Canvas data={d} selected={selected} editable={editable} view={view} onView={setView} onSelect={setSelected} onMove={move} onResize={resize} onDelete={remove} />
           {empty && (
