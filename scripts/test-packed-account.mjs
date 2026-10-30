@@ -14,8 +14,14 @@ import { canvasAccount, type CanvasAccountDeps } from "agentic-canvas/account";
 declare const deps: CanvasAccountDeps;
 createAccountRegistry().register(canvasAccount, deps);
 `);
-  execFileSync(process.execPath, [join(host, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'host.mts'], { cwd: host, stdio: 'inherit' });
-  console.log('Packed account host compiles with identity 0.12.0');
+  execFileSync(process.execPath, [join(host, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'host.mts'], { cwd: host, stdio: 'inherit' });
+  writeFileSync(join(host, 'host.mjs'), `import { createAccountRegistry } from "agentic-identity/account";
+import { canvasAccount } from "agentic-canvas/account";
+import assert from "node:assert/strict";
+assert.deepEqual(createAccountRegistry().register(canvasAccount, {}).ids(), ["canvas"]);
+`);
+  execFileSync(process.execPath, ['host.mjs'], { cwd: host, stdio: 'inherit' });
+  console.log('Packed account host compiles and loads with identity 0.12.0');
 } finally {
   rmSync(host, { recursive: true, force: true });
 }

@@ -248,8 +248,10 @@ import { canvasAccount } from "agentic-canvas/account";
 const registry = createAccountRegistry().register(canvasAccount, { store, saveRoom, eraseRoom });
 const subject = { kind: "agent_of_human" as const, id: "assistant" };
 const { zip, manifest } = await registry.export(subject);
-const report = await registry.erase(subject, store, { actor: null });
+const report = await registry.erase(subject, store, { actor: operator });
 ```
+
+The host supplies `operator`, a `PrincipalContext` for the person or agent that runs the erase. Use `null` only for an anonymous or unattended erase.
 
 Set `resourceType` (default `canvas`) and `collection` (default `boards`) to match the host. Board ids must still use 1 to 64 ASCII letters, digits, underscores, or hyphens, and must not start and end with two underscores. This rule also applies to custom resource types and external content sources. The output collection names stay the same. By default, rows without an `update` field are skipped. Give `isBoard(id, data)` to select rows by a host kind field. Rows of the configured resource type are always selected, so damaged personal data cannot be skipped. Selected rows that do not decode still fail with `INVALID`. Shared-board writes keep other row fields. Each scan reads the sharing resource for every stored row to check its type. An erase scans the collection, then reads stamped boards again inside transactions. Allow for these reads on large collections.
 
@@ -284,7 +286,6 @@ The registry puts each collection in a JSON file in the export zip. The direct c
   - Image bytes in the image store have no uploader record, so they are not exported or erased. Only the `blob:` key in an element is.
   - A deleted element leaves its id in the stored Yjs history. Its content is gone, and an id that the caller chose can stay in the stored bytes.
   - A connector of someone else that the subject edited, and that goes with a deleted shape, is in `edited_elements` of the export and not in its erase count.
-
 
 ## UI
 
